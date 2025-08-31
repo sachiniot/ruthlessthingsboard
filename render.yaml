@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: solar-monitoring-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.4
+      - key: THINGSBOARD_HOST
+        fromService:
+          name: thingsboard
+          type: web
+          property: host
+      - key: THINGSBOARD_ACCESS_TOKEN
+        value: your_solar_device_token_here
+      - key: THINGSBOARD_WEATHER_DEVICE_TOKEN
+        value: your_weather_device_token_here
