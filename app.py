@@ -1,4 +1,3 @@
-
 from flask import Flask, request, jsonify
 from datetime import datetime, timedelta
 import requests
@@ -168,7 +167,7 @@ def send_data_to_thingsboard():
         device_type = data.get('device_type', 'weather')  # 'weather' or 'solar'
         
         if device_type == 'weather':
-            # Send weather data
+            # Send weather data using resend function
             success = resend_weather_to_thingsboard()
             return jsonify({"success": success, "device": "weather", "message": "Weather data sent to ThingsBoard"})
         
@@ -362,4 +361,172 @@ def get_weather_data(force_refresh=False):
             forecast.append({
                 'date': times[i],
                 'temperature_max': daily_data.get('temperature_2m_max', [])[i] if i < len(daily_data.get('temperature_2m_max', [])) else None,
-                'temperature_min': daily_data.get('temperature_2m_min', [])[i] if i < len(daily
+                'temperature_min': daily_data.get('temperature_2m_min', [])[i] if i < len(daily_data.get('temperature_2m_min', [])) else None,
+                'precipitation': daily_data.get('precipitation_sum', [])[i] if i < len(daily_data.get('precipitation_sum', [])) else None,
+                'rain': daily_data.get('rain_sum', [])[i] if i < len(daily_data.get('rain_sum', [])) else None,
+                'weather_code': daily_data.get('weather_code', [])[i] if i < len(daily_data.get('weather_code', [])) else None
+            })
+        
+        weather_data = {
+            'current': current_weather,
+            'forecast': forecast,
+            'location': {'lat': BAREILLY_LAT, 'lon': BAREILLY_LON, 'name': 'Bareilly, India'},
+            'last_updated': datetime.now().isoformat(),
+            'source': 'open-meteo'
+        }
+        
+        # Update cache
+        weather_cache = weather_data
+        weather_last_updated = datetime.now()
+        
+        print("✅ Weather data fetched successfully from Open-Meteo!")
+        print(f"🌡️ Current Temperature: {current_weather['temperature']}°C")
+        print(f"💧 Humidity: {current_weather['humidity']}%")
+        print(f"☁️ Cloud Cover: {current_weather['cloud_cover']}%")
+        print(f"💨 Wind Speed: {current_weather['wind_speed']} km/h")
+        print(f"🌧️ Precipitation: {current_weather['precipitation']} mm")
+        
+        # Send weather data to ThingsBoard
+        telemetry_data = {
+            "temperature": current_weather['temperature'],
+            "humidity": current_weather['humidity'],
+            "cloud_cover": current_weather['cloud_cover'],
+            "wind_speed": current_weather['wind_speed'],
+            "precipitation": current_weather['precipitation'],
+            "weather_code": current_weather['weather_code'],
+            "location_lat": BAREILLY_LAT,
+            "location_lon": BAREILLY_LON
+        }
+        send_to_thingsboard(THINGSBOARD_WEATHER_DEVICE_TOKEN, telemetry_data)
+        
+        return weather_data
+        
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Open-Meteo API error: {str(e)}"
+        print(f"❌ {error_msg}")
+        return {'error': error_msg}
+    except Exception as e:
+        error_msg = f"Error processing weather data: {str(e)}"
+        print(f"❌ {error_msg}")
+        return {'error': error_msg}
+
+def log_weather_data(weather_data):
+    """Helper function to log weather data"""
+    if 'error' in weather_data:
+        print(f"❌ Weather error: {weather_data['error']}")
+        return
+    
+    current = weather_data['current']
+    print("🌤️ CURRENT WEATHER DETAILS:")
+    print(f"   Temperature: {current.get('temperature', 'N/A')}°C")
+    print(f"   Feels like: {current.get('feels_like', 'N/A')}°C")
+    print(f"   Humidity: {current.get('humidity', 'N/A')}%")
+    print(f"   Cloud Cover: {current.get('cloud_cover', 'N/A')}%")
+    print(f"   Wind Speed: {current.get('wind_speed', 'N/A')} km/h")
+    print(f"   Precipitation: {current.get('precipitation', 'N/A')} mm")
+    print(f"   Rain: {current.get('rain', 'N/A')} mm")
+
+@app.route('/weather', methods=['GET'])
+def weather():
+    """Get current weather and forecast"""
+    try:
+        force_refresh = request.args.get('force_refresh', 'false').lower() == 'true'
+        if force_refresh:
+            print("🔄 Force refresh requested - bypassing cache")
+        
+        weather_data = get_weather_data(force_refresh=force_refresh)
+        
+        # Log weather details
+        log_weather_data(weather_data)
+        
+        # Add cache info to response
+        if 'error' not in weather_data:
+            cache_info = {
+                'cache_used': not force_refresh and weather_cache is not None and 
+                             (datetime.now() - weather_last_updated).total_seconds() < CACHE_DURATION,
+                'cache_age_seconds': (datetime.now() - weather_last_updated).total_seconds() if weather_last_updated else None
+            }
+            weather_data.update(cache_info)
+        
+        return jsonify(weather_data)
+        
+    except Exception as e:
+        error_msg = f"Weather endpoint error: {str(e)}"
+        print(f"❌ {error_msg}")
+        return jsonify({"error": error_msg}), 500
+
+@app.route('/combined-data', methods=['GET'])
+def combined_data():
+    """Get combined ESP32 data and weather data"""
+    try:
+        # Get ESP32 data
+        esp32_data = {
+            "box_temp": box_temp,
+            "frequency": frequency,
+            "power_factor": power_factor,
+            "voltage": voltage,
+            "current": current,
+            "power": power,
+            "energy": energy,
+            "solar_voltage": solar_voltage,
+            "solar_current": solar_current,
+            "solar_power": solar_power,
+            "battery_percentage": battery_percentage,
+            "light_intensity": light_intensity,
+            "battery_voltage": battery_voltage,
+            "esp32_last_updated": datetime.now().isoformat() if any([box_temp, power, solar_power]) else None
+        }
+        
+        # Get weather data
+        weather_data = get_weather_data()
+        
+        # Log both data sources
+        print("📊 COMBINED DATA REQUEST:")
+        print(f"   ESP32 - Power: {power}W, Solar: {solar_power}W, Battery: {battery_percentage}%")
+        if 'current' in weather_data and 'error' not in weather_data:
+            print(f"   Weather - Temp: {weather_data['current'].get('temperature')}°C, Humidity: {weather_data['current'].get('humidity')}%")
+        
+        return jsonify({
+            "esp32_data": esp32_data,
+            "weather_data": weather_data,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        error_msg = f"Combined data error: {str(e)}"
+        print(f"❌ {error_msg}")
+        return jsonify({"error": error_msg}), 500
+
+@app.route('/test-open-meteo', methods=['GET'])
+def test_open_meteo():
+    """
+    Test endpoint to check Open-Meteo API
+    """
+    try:
+        print("🧪 Testing Open-Meteo API for Bareilly...")
+        weather_data = get_weather_data()
+        
+        if 'error' in weather_data:
+            print(f"❌ Open-Meteo test failed: {weather_data['error']}")
+            return jsonify({"success": False, "error": weather_data['error']})
+        
+        print("✅ Open-Meteo API test successful!")
+        return jsonify({
+            "success": True,
+            "has_data": True,
+            "current_temperature": weather_data['current'].get('temperature'),
+            "location": weather_data['location'],
+            "source": weather_data.get('source', 'open-meteo')
+        })
+        
+    except Exception as e:
+        error_msg = f"Open-Meteo test failed: {str(e)}"
+        print(f"❌ {error_msg}")
+        return jsonify({"success": False, "error": error_msg})
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
+else:
+    # This is for gunicorn deployment
+    application = app
