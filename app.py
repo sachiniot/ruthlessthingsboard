@@ -6,7 +6,7 @@ import os  # Added for environment variables
 
 app = Flask(__name__)
 
-# Global variables for ESP32 data
+# Global variables for ESP32 data        
 box_temp = None
 frequency = None
 power_factor = None
@@ -36,7 +36,6 @@ OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 # ThingsBoard Configuration (Update these with your ThingsBoard details)
 THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.io')
 THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'Z1kBA2x2yG6R661ArK7E')
-THINGSBOARD_WEATHER_DEVICE_TOKEN = os.environ.get('THINGSBOARD_WEATHER_DEVICE_TOKEN', 'YOUR_WEATHER_DEVICE_TOKEN')
 
 @app.route('/')
 def home():
@@ -127,7 +126,7 @@ def resend_weather_to_thingsboard():
         print(f"🔄 Resending weather data to ThingsBoard: {telemetry_data}")
         
         # Send to ThingsBoard
-        success = send_to_thingsboard(THINGSBOARD_WEATHER_DEVICE_TOKEN, telemetry_data)
+        success = send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
         
         if success:
             print("✅ Weather data resent successfully to ThingsBoard!")
@@ -397,7 +396,7 @@ def get_weather_data(force_refresh=False):
             "location_lat": BAREILLY_LAT,
             "location_lon": BAREILLY_LON
         }
-        send_to_thingsboard(THINGSBOARD_WEATHER_DEVICE_TOKEN, telemetry_data)
+        send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
         
         return weather_data
         
