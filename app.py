@@ -1,6 +1,4 @@
-Here's your complete updated code with the ability to resend weather data to ThingsBoard regardless of whether it's fresh or cached:
 
-```python
 from flask import Flask, request, jsonify
 from datetime import datetime, timedelta
 import requests
