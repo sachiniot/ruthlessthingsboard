@@ -162,23 +162,8 @@ def send_data_to_thingsboard():
 
 @app.route('/esp32-data', methods=['POST'])
 
-@app.route('/debug', methods=['GET', 'POST'])
-def debug():
-    if request.method == 'POST':
-        return jsonify({"message": "POST received", "data": request.get_json()})
-    return jsonify({
-        "status": "server is running",
-        "endpoints": {
-            "POST /esp32-data": "Receive ESP32 data",
-            "GET /weather": "Get weather data",
-            "GET /debug": "This debug endpoint",
-            "GET /test-params": "Check current parameters",
-            "POST /send-to-thingsboard": "Send to ThingsBoard",
-            "POST /resend-weather": "Resend weather data"
-        }
-    })
 
-@app.route('/test-params', methods=['GET'])
+
 def receive_esp32_data():
     global box_temp, frequency, power_factor, voltage, current, power, energy
     global solar_voltage, solar_current, solar_power, battery_percentage
