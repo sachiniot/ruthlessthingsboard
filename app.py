@@ -203,12 +203,35 @@ def receive_esp32_data():
             }
             send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
         
-        return jsonify({"message": "Data received successfully", "status": "ok"})
+        # Get current weather data to send back to ESP32
+        weather_data = get_weather_data(force_refresh=False)
+        
+        # Prepare response with weather data
+        response_data = {
+            "message": "Data received successfully", 
+            "status": "ok",
+            "weather": {
+                "temperature": weather_data['current'].get('temperature'),
+                "humidity": weather_data['current'].get('humidity'),
+                "cloud_cover": weather_data['current'].get('cloud_cover'),
+                "wind_speed": weather_data['current'].get('wind_speed'),
+                "precipitation": weather_data['current'].get('precipitation'),
+                "weather_code": weather_data['current'].get('weather_code'),
+                "feels_like": weather_data['current'].get('feels_like'),
+                "timestamp": weather_data['current'].get('timestamp')
+            },
+            "location": {
+                "lat": BAREILLY_LAT,
+                "lon": BAREILLY_LON,
+                "name": "Bareilly, India"
+            }
+        }
+        
+        return jsonify(response_data)
         
     except Exception as e:
         print(f"❌ Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
 @app.route('/debug', methods=['GET', 'POST'])
 def debug():
     if request.method == 'POST':
