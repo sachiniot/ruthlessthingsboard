@@ -3,8 +3,10 @@ from datetime import datetime, timedelta
 import requests
 import math
 import os
+from flask_cors import CORS  
 
 app = Flask(__name__)
+CORS(app) 
 
 # Global variables for ESP32 data
 box_temp = None
@@ -159,79 +161,7 @@ def send_data_to_thingsboard():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/esp32-data', methods=['POST'])
-def receive_esp32_data():
-    global box_temp, frequency, power_factor, voltage, current, power, energy
-    global solar_voltage, solar_current, solar_power, battery_percentage
-    global light_intensity, battery_voltage
-    
-    print("📨 Received POST request to /esp32-data")
-    
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "No JSON data received"}), 400
-        
-        print(f"✅ JSON data received: {data}")
-        
-        box_temp = data.get('box_temp') or data.get('BoxTemperature')
-        frequency = data.get('frequency') or data.get('Frequency')
-        power_factor = data.get('power_factor') or data.get('PowerFactor')
-        voltage = data.get('voltage') or data.get('Voltage')
-        current = data.get('current') or data.get('Current')
-        power = data.get('power') or data.get('Power')
-        energy = data.get('energy') or data.get('Energy')
-        solar_voltage = data.get('solar_voltage') or data.get('SolarVoltage')
-        solar_current = data.get('solar_current') or data.get('solarCurrent')
-        solar_power = data.get('solar_power') or data.get('solarPower')
-        battery_percentage = data.get('battery_percentage') or data.get('batteryPercentage')
-        light_intensity = data.get('light_intensity') or data.get('lightIntensity')
-        battery_voltage = data.get('battery_voltage') or data.get('batteryVoltage')
-        
-        print(f"✅ Box Temp: {box_temp}°C, Power: {power}W, Solar: {solar_power}W, Battery: {battery_percentage}%")
-        
-        if any([box_temp, power, solar_power]):
-            telemetry_data = {
-                "box_temperature": box_temp,
-                "power": power,
-                "solar_power": solar_power,
-                "battery_percentage": battery_percentage,
-                "voltage": voltage,
-                "current": current,
-                "light_intensity": light_intensity,
-                "energy": energy,
-                "frequency": frequency
-            }
-            send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
-        
-        # Get current weather data to send back to ESP32
-        weather_data = get_weather_data(force_refresh=False)
-        
-        # Prepare response with weather data
-        response_data = {
-            "message": "Data received successfully", 
-            "status": "ok",
-            "weather": {
-                "temperature": weather_data['current'].get('temperature'),
-                "humidity": weather_data['current'].get('humidity'),
-                "cloud_cover": weather_data['current'].get('cloud_cover'),
-                "wind_speed": weather_data['current'].get('wind_speed'),
-                "precipitation": weather_data['current'].get('precipitation'),
-                "weather_code": weather_data['current'].get('weather_code'),
-                "feels_like": weather_data['current'].get('feels_like'),
-                "timestamp": weather_data['current'].get('timestamp')
-            },
-            "location": {
-                "lat": BAREILLY_LAT,
-                "lon": BAREILLY_LON,
-                "name": "Bareilly, India"
-            }
-        }
-        
-        return jsonify(response_data)
-        
-    except Exception as e:
-        print(f"❌ Error: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+
 @app.route('/debug', methods=['GET', 'POST'])
 def debug():
     if request.method == 'POST':
@@ -249,6 +179,92 @@ def debug():
     })
 
 @app.route('/test-params', methods=['GET'])
+def receive_esp32_data():
+    global box_temp, frequency, power_factor, voltage, current, power, energy
+    global solar_voltage, solar_current, solar_power, battery_percentage
+    global light_intensity, battery_voltage
+    
+    print("📨 Received POST request to /esp32-data")
+    
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON data received"}), 400
+        
+        print(f"✅ JSON data received: {data}")
+        
+        # Update ESP32 data variables (your existing code)
+        box_temp = data.get('box_temp') or data.get('BoxTemperature')
+        frequency = data.get('frequency') or data.get('Frequency')
+        power_factor = data.get('power_factor') or data.get('PowerFactor')
+        voltage = data.get('voltage') or data.get('Voltage')
+        current = data.get('current') or data.get('Current')
+        power = data.get('power') or data.get('Power')
+        energy = data.get('energy') or data.get('Energy')
+        solar_voltage = data.get('solar_voltage') or data.get('SolarVoltage')
+        solar_current = data.get('solar_current') or data.get('solarCurrent')
+        solar_power = data.get('solar_power') or data.get('solarPower')
+        battery_percentage = data.get('battery_percentage') or data.get('batteryPercentage')
+        light_intensity = data.get('light_intensity') or data.get('lightIntensity')
+        battery_voltage = data.get('battery_voltage') or data.get('batteryVoltage')
+        
+        print(f"✅ Box Temp: {box_temp}°C, Power: {power}W, Solar: {solar_power}W, Battery: {battery_percentage}%")
+        
+        # Send to ThingsBoard (your existing code)
+        if any([box_temp, power, solar_power]):
+            telemetry_data = {
+                "box_temperature": box_temp,
+                "power": power,
+                "solar_power": solar_power,
+                "battery_percentage": battery_percentage,
+                "voltage": voltage,
+                "current": current,
+                "light_intensity": light_intensity,
+                "energy": energy,
+                "frequency": frequency
+            }
+            send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
+        
+        # Get current weather data to send back to ESP32
+        weather_data = get_weather_data(force_refresh=False)
+        
+        # FIXED: Handle case where weather data contains error
+        if 'error' in weather_data:
+            # Return basic success response without weather data
+            response_data = {
+                "message": "Data received successfully (weather data unavailable)", 
+                "status": "ok",
+                "weather_available": False,
+                "weather_error": weather_data['error']
+            }
+        else:
+            # Return response with weather data
+            response_data = {
+                "message": "Data received successfully", 
+                "status": "ok",
+                "weather_available": True,
+                "weather": {
+                    "temperature": weather_data['current'].get('temperature'),
+                    "humidity": weather_data['current'].get('humidity'),
+                    "cloud_cover": weather_data['current'].get('cloud_cover'),
+                    "wind_speed": weather_data['current'].get('wind_speed'),
+                    "precipitation": weather_data['current'].get('precipitation'),
+                    "weather_code": weather_data['current'].get('weather_code'),
+                    "feels_like": weather_data['current'].get('feels_like'),
+                    "timestamp": weather_data['current'].get('timestamp')
+                },
+                "location": {
+                    "lat": BAREILLY_LAT,
+                    "lon": BAREILLY_LON,
+                    "name": "Bareilly, India"
+                }
+            }
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 def test_params():
     return jsonify({
         "box_temp": box_temp,
