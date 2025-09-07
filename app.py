@@ -22,6 +22,7 @@ solar_power = None
 battery_percentage = None
 light_intensity = None
 battery_voltage = None
+send_telegram_message=None
 
 # Weather data cache
 weather_cache = None
@@ -34,6 +35,11 @@ BAREILLY_LON = 79.4151
 
 # Open-Meteo API
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+
+#Telergam token and id
+TELEGRAM_BOT_TOKEN = os.environ.get('8352010252:AAFxUDRp1ihGFQk_cu4ifQgQ8Yi4a_UVpDA')
+TELEGRAM_CHAT_ID = os.environ.get('5625474222')
+
 
 # ThingsBoard Configuration
 THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.io')
@@ -167,7 +173,7 @@ def send_data_to_thingsboard():
 def receive_esp32_data():
     global box_temp, frequency, power_factor, voltage, current, power, energy
     global solar_voltage, solar_current, solar_power, battery_percentage
-    global light_intensity, battery_voltage
+    global light_intensity, battery_voltage,send_telegram_message
     
     print("📨 Received POST request to /esp32-data")
     
@@ -192,6 +198,7 @@ def receive_esp32_data():
         battery_percentage = data.get('battery_percentage') or data.get('batteryPercentage')
         light_intensity = data.get('light_intensity') or data.get('lightIntensity')
         battery_voltage = data.get('battery_voltage') or data.get('batteryVoltage')
+        
         
         print(f"✅ Box Temp: {box_temp}°C, Power: {power}W, Solar: {solar_power}W, Battery: {battery_percentage}%")
         
@@ -378,6 +385,65 @@ def test_open_meteo():
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
+
+  # function seperatelty for telegram alert..............................................................................................................
+def send_telegram_message(message):
+    """Send message to Telegram bot"""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return {"error": "Telegram credentials not configured"}
+    
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML"
+    }
+    
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        return {"error": f"Failed to send message: {str(e)}"}
+
+@app.route('/alert', methods=['POST'])
+def handle_alert():
+    """Endpoint to receive alerts and forward to Telegram"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'message' not in data:
+            return jsonify({"error": "No message provided"}), 400
+        
+        message = data['message']
+        
+        # Optional: Add server info to the message
+        server_info = f"🚨 <b>Alert from Render Server</b> 🚨\n\n"
+        formatted_message = server_info + str(message)
+        
+        # Send to Telegram
+        result = send_telegram_message(formatted_message)
+        
+        if 'error' in result:
+            return jsonify({"error": result['error']}), 500
+        
+        return jsonify({"status": "Message sent to Telegram", "telegram_response": result}), 200
+        
+    except Exception as e:
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+
+
+#end of telegram sending alert from server functions ........................................................................................
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({"status": "healthy"}), 200
+
+
+send_telegram_alert("alert from server")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
