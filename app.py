@@ -22,7 +22,6 @@ solar_power = None
 battery_percentage = None
 light_intensity = None
 battery_voltage = None
-send_telegram_message=None
 
 # Weather data cache
 weather_cache = None
@@ -36,10 +35,9 @@ BAREILLY_LON = 79.4151
 # Open-Meteo API
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
-#Telergam token and id
-TELEGRAM_BOT_TOKEN = os.environ.get('8352010252:AAFxUDRp1ihGFQk_cu4ifQgQ8Yi4a_UVpDA')
-TELEGRAM_CHAT_ID = os.environ.get('5625474222')
-
+# Telegram token and id - FIXED: Use environment variables correctly
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 # ThingsBoard Configuration
 THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.io')
@@ -56,12 +54,17 @@ def home():
             "GET /test-open-meteo": "Test Open-Meteo API connection",
             "GET /test-params": "Check current parameter values",
             "POST /send-to-thingsboard": "Send data to ThingsBoard",
-            "POST /resend-weather": "Resend weather data to ThingsBoard"
+            "POST /resend-weather": "Resend weather data to ThingsBoard",
+            "POST /alert": "Send alert to Telegram"  # Added this endpoint
         },
         "thingsboard_config": {
             "host": THINGSBOARD_HOST,
             "device_token": THINGSBOARD_ACCESS_TOKEN,
             "status": "configured" if THINGSBOARD_ACCESS_TOKEN != 'YOUR_DEVICE_ACCESS_TOKEN' else "not_configured"
+        },
+        "telegram_config": {
+            "bot_configured": TELEGRAM_BOT_TOKEN is not None,
+            "chat_id_configured": TELEGRAM_CHAT_ID is not None
         },
         "status": "active"
     })
@@ -167,13 +170,10 @@ def send_data_to_thingsboard():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/esp32-data', methods=['POST'])
-
-
-
 def receive_esp32_data():
     global box_temp, frequency, power_factor, voltage, current, power, energy
     global solar_voltage, solar_current, solar_power, battery_percentage
-    global light_intensity, battery_voltage,send_telegram_message
+    global light_intensity, battery_voltage
     
     print("📨 Received POST request to /esp32-data")
     
@@ -199,8 +199,17 @@ def receive_esp32_data():
         light_intensity = data.get('light_intensity') or data.get('lightIntensity')
         battery_voltage = data.get('battery_voltage') or data.get('batteryVoltage')
         
-        
         print(f"✅ Box Temp: {box_temp}°C, Power: {power}W, Solar: {solar_power}W, Battery: {battery_percentage}%")
+        
+        # Check for critical conditions and send alerts
+        if battery_percentage is not None and battery_percentage < 20:
+            send_telegram_alert(f"🔋 Low battery alert: {battery_percentage}% remaining!")
+        
+        if box_temp is not None and box_temp > 50:
+            send_telegram_alert(f"🌡️ High temperature alert: {box_temp}°C detected!")
+        
+        if solar_power is not None and solar_power < 10 and light_intensity is not None and light_intensity > 50000:
+            send_telegram_alert(f"⚡ Solar panel issue: High light ({light_intensity} lux) but low power ({solar_power}W)")
         
         # Send to ThingsBoard (your existing code)
         if any([box_temp, power, solar_power]):
@@ -257,6 +266,8 @@ def receive_esp32_data():
     except Exception as e:
         print(f"❌ Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/test-params', methods=['GET'])
 def test_params():
     return jsonify({
         "box_temp": box_temp,
@@ -277,7 +288,8 @@ def check_config():
         "device_token": THINGSBOARD_ACCESS_TOKEN,
         "solar_data_available": any([box_temp, power, solar_power]),
         "weather_cache_age": (datetime.now() - weather_last_updated).total_seconds() if weather_last_updated else None,
-        "weather_cache_valid": weather_cache is not None
+        "weather_cache_valid": weather_cache is not None,
+        "telegram_configured": TELEGRAM_BOT_TOKEN is not None and TELEGRAM_CHAT_ID is not None
     })
 
 def get_weather_data(force_refresh=False):
@@ -299,7 +311,7 @@ def get_weather_data(force_refresh=False):
         }
         
         response = requests.get(OPEN_METEO_URL, params=params, timeout=15)
-        response.raise_for_status()
+        response.raise_forstatus()
         data = response.json()
         
         current = data.get('current', {})
@@ -386,26 +398,33 @@ def test_open_meteo():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
-  # function seperatelty for telegram alert..............................................................................................................
-def send_telegram_message(message):
-    """Send message to Telegram bot"""
+# Telegram alert functions..............................................................................................................
+def send_telegram_alert(message):
+    """Send alert message to Telegram bot"""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("⚠️ Telegram credentials not configured")
         return {"error": "Telegram credentials not configured"}
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     
+    # Add emoji and formatting for better visibility
+    formatted_message = f"🚨 <b>Solar Monitor Alert</b> 🚨\n\n{message}\n\n<i>Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</i>"
+    
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
+        "text": formatted_message,
         "parse_mode": "HTML"
     }
     
     try:
         response = requests.post(url, json=payload, timeout=10)
         response.raise_for_status()
+        print(f"✅ Alert sent to Telegram: {message}")
         return response.json()
     except requests.exceptions.RequestException as e:
-        return {"error": f"Failed to send message: {str(e)}"}
+        error_msg = f"Failed to send Telegram message: {str(e)}"
+        print(f"❌ {error_msg}")
+        return {"error": error_msg}
 
 @app.route('/alert', methods=['POST'])
 def handle_alert():
@@ -418,12 +437,8 @@ def handle_alert():
         
         message = data['message']
         
-        # Optional: Add server info to the message
-        server_info = f"🚨 <b>Alert from Render Server</b> 🚨\n\n"
-        formatted_message = server_info + str(message)
-        
         # Send to Telegram
-        result = send_telegram_message(formatted_message)
+        result = send_telegram_alert(message)
         
         if 'error' in result:
             return jsonify({"error": result['error']}), 500
@@ -433,20 +448,21 @@ def handle_alert():
     except Exception as e:
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
-
-
-#end of telegram sending alert from server functions ........................................................................................
+# End of telegram sending alert from server functions........................................................................................
 
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
-    return jsonify({"status": "healthy"}), 200
-
-
-send_telegram_message("alert from server")
+    telegram_status = "configured" if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID else "not_configured"
+    return jsonify({
+        "status": "healthy", 
+        "telegram": telegram_status,
+        "thingsboard": "configured" if THINGSBOARD_ACCESS_TOKEN != 'YOUR_DEVICE_ACCESS_TOKEN' else "not_configured"
+    }), 200
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
+    # REMOVED: send_telegram_message("alert from server") - This was causing the error
     app.run(host='0.0.0.0', port=port, debug=False)
 else:
     application = app
