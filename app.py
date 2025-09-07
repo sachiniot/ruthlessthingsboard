@@ -443,7 +443,7 @@ def health_check():
     return jsonify({"status": "healthy"}), 200
 
 
-send_telegram_alert("alert from server")
+send_telegram_message("alert from server")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
