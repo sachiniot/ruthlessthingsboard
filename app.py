@@ -23,23 +23,24 @@ battery_percentage = None
 light_intensity = None
 battery_voltage = None
 
-#edit global varibale:
-prevlightintesity=0
-currentlightintesity=0
-lightslope=0       
-thresholdslope=0   # set this as per our project
-irradiance=0
-prevbatterypercent=0
-currentbatterypercent=0
-batterypercentslope=0
-thresholdbatteryslope=0  # set this as per our need
-inverterrating=0  # set as per our project
-
+# Alert system variables
+prev_light_intensity = 0
+current_light_intensity = 0
+light_slope = 0       
+threshold_slope = -100   # Set appropriate threshold for sudden light drop
+irradiance = 0
+prev_battery_percent = 0
+current_battery_percent = 0
+battery_percent_slope = 0
+threshold_battery_slope = 0.1  # Set appropriate threshold for battery charging rate
+inverter_rating = 500  # Set your inverter rating in watts
+last_alert_time = {}
+ALERT_COOLDOWN = 3600  # 1 hour cooldown between alerts of the same type
 
 # Weather data cache
 weather_cache = None
 weather_last_updated = None
-CACHE_DURATION = 3600
+CACHE_DURATION = 3600  # 1 hour
 
 # Bareilly coordinates
 BAREILLY_LAT = 28.3640
@@ -63,13 +64,13 @@ def home():
         "endpoints": {
             "POST /esp32-data": "Receive data from ESP32",
             "GET /weather": "Get weather data",
-            "GET /hourly-forecast": "Get hourly weather forecast",  # Added this endpoint
+            "GET /hourly-forecast": "Get hourly weather forecast",
             "GET /combined-data": "Get combined ESP32 and weather data",
             "GET /test-open-meteo": "Test Open-Meteo API connection",
             "GET /test-params": "Check current parameter values",
             "POST /send-to-thingsboard": "Send data to ThingsBoard",
             "POST /resend-weather": "Resend weather data to ThingsBoard",
-            "POST /alert": "Send alert to Telegram"  # Added this endpoint
+            "POST /alert": "Send alert to Telegram"
         },
         "thingsboard_config": {
             "host": THINGSBOARD_HOST,
@@ -97,7 +98,7 @@ def send_to_thingsboard(device_token, telemetry_data):
         
         headers = {'Content-Type': 'application/json'}
         
-        print(f"📤 Sending to ThingsBoard: {url")
+        print(f"📤 Sending to ThingsBoard: {url}")
         response = requests.post(url, json=telemetry_with_ts, headers=headers, timeout=10)
         response.raise_for_status()
         
@@ -183,11 +184,12 @@ def send_data_to_thingsboard():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/esp32-data', methods['POST'])
+@app.route('/esp32-data', methods=['POST'])
 def receive_esp32_data():
     global box_temp, frequency, power_factor, voltage, current, power, energy
     global solar_voltage, solar_current, solar_power, battery_percentage
-    global light_intensity, battery_voltage
+    global light_intensity, battery_voltage, prev_light_intensity, current_light_intensity
+    global prev_battery_percent, current_battery_percent
     
     print("📨 Received POST request to /esp32-data")
     
@@ -198,7 +200,7 @@ def receive_esp32_data():
         
         print(f"✅ JSON data received: {data}")
         
-        # Update ESP32 data variables (your existing code)
+        # Update ESP32 data variables
         box_temp = data.get('box_temp') or data.get('BoxTemperature')
         frequency = data.get('frequency') or data.get('Frequency')
         power_factor = data.get('power_factor') or data.get('PowerFactor')
@@ -214,13 +216,18 @@ def receive_esp32_data():
         battery_voltage = data.get('battery_voltage') or data.get('batteryVoltage')
         
         print(f"✅ Box Temp: {box_temp}°C, Power: {power}W, Solar: {solar_power}W, Battery: {battery_percentage}%")
-        alerts()
         
-
-
+        # Update alert system variables
+        prev_battery_percent = current_battery_percent
+        current_battery_percent = battery_percentage if battery_percentage else 0
         
-               
-        # Send to ThingsBoard (your existing code)
+        prev_light_intensity = current_light_intensity
+        current_light_intensity = light_intensity if light_intensity else 0
+        
+        # Check for alerts
+        check_alerts()
+        
+        # Send to ThingsBoard
         if any([box_temp, power, solar_power]):
             telemetry_data = {
                 "box_temperature": box_temp,
@@ -450,12 +457,20 @@ def test_open_meteo():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
-# Telegram alert functions..............................................................................................................
-def send_telegram_alert(message):
+# Telegram alert functions
+def send_telegram_alert(message, alert_type="general"):
     """Send alert message to Telegram bot"""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("⚠️ Telegram credentials not configured")
         return {"error": "Telegram credentials not configured"}
+    
+    # Check if we should send this alert (cooldown period)
+    current_time = datetime.now().timestamp()
+    last_sent = last_alert_time.get(alert_type, 0)
+    
+    if current_time - last_sent < ALERT_COOLDOWN:
+        print(f"⚠️ Alert {alert_type} skipped due to cooldown")
+        return {"status": "skipped", "reason": "cooldown"}
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     
@@ -472,6 +487,9 @@ def send_telegram_alert(message):
         response = requests.post(url, json=payload, timeout=10)
         response.raise_for_status()
         print(f"✅ Alert sent to Telegram: {message}")
+        
+        # Update last sent time for this alert type
+        last_alert_time[alert_type] = current_time
         return response.json()
     except requests.exceptions.RequestException as e:
         error_msg = f"Failed to send Telegram message: {str(e)}"
@@ -488,9 +506,10 @@ def handle_alert():
             return jsonify({"error": "No message provided"}), 400
         
         message = data['message']
+        alert_type = data.get('type', 'general')
         
         # Send to Telegram
-        result = send_telegram_alert(message)
+        result = send_telegram_alert(message, alert_type)
         
         if 'error' in result:
             return jsonify({"error": result['error']}), 500
@@ -500,7 +519,93 @@ def handle_alert():
     except Exception as e:
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
-# End of telegram sending alert from server functions........................................................................................
+# Alert checking functions
+def check_alerts():
+    """Check all alert conditions and send notifications if needed"""
+    try:
+        # 1. Alert for overcharge or discharge
+        if battery_percentage is not None:
+            if battery_percentage >= 100:
+                send_telegram_alert(
+                    f"⚠️ Battery is fully charged ({battery_percentage}%). "
+                    "Consider reducing charging to prevent overcharging.",
+                    "battery_full"
+                )
+            elif battery_percentage < 15:
+                send_telegram_alert(
+                    f"🔋 Battery level critical ({battery_percentage}%). "
+                    "Please connect to grid power or reduce load.",
+                    "battery_low"
+                )
+        
+        # 2. Check if solar panel is underperforming
+        if solar_voltage is not None and solar_current is not None:
+            solar_power_value = (solar_voltage * solar_current) / 1000  # Convert to kW
+            
+            # Convert light intensity to irradiance (approximate conversion)
+            if light_intensity is not None:
+                irradiance_value = light_intensity / 120  # Conversion of lux to irradiance
+                
+                # Check if solar power is appropriate for the irradiance level
+                if irradiance_value >= 900 and solar_power_value < 0.31:
+                    send_telegram_alert(
+                        f"☀️ High sunlight but low solar production. "
+                        f"Irradiance: {irradiance_value:.2f} W/m², "
+                        f"Solar Power: {solar_power_value:.2f} kW. "
+                        "Check panel cleanliness or connections.",
+                        "solar_underperformance"
+                    )
+                elif irradiance_value >= 600 and solar_power_value < 0.22:
+                    send_telegram_alert(
+                        f"☀️ Good sunlight but low solar production. "
+                        f"Irradiance: {irradiance_value:.2f} W/m², "
+                        f"Solar Power: {solar_power_value:.2f} kW. "
+                        "Check panel cleanliness or connections.",
+                        "solar_underperformance"
+                    )
+        
+        # 3. Check for overload conditions
+        if voltage is not None and current is not None:
+            power_value = (voltage * current) / 1000  # Convert to kW
+            if power_value > inverter_rating:
+                send_telegram_alert(
+                    f"⚡ System overload detected! "
+                    f"Power: {power_value:.2f} kW, "
+                    f"Inverter Rating: {inverter_rating} kW. "
+                    "Please reduce load to prevent damage.",
+                    "overload"
+                )
+        
+        # 4. Check for sudden drop in sunlight
+        if light_intensity is not None:
+            # Calculate rate of change (simple difference for now)
+            light_change = current_light_intensity - prev_light_intensity
+            
+            if light_change < threshold_slope and current_light_intensity > 0:
+                send_telegram_alert(
+                    f"🌥️ Sudden drop in sunlight detected. "
+                    f"Light intensity dropped from {prev_light_intensity} to {current_light_intensity}. "
+                    "This may affect solar production.",
+                    "light_drop"
+                )
+        
+        # 5. Check if solar is generating power but battery isn't charging
+        if (solar_power is not None and solar_power > 0 and 
+            battery_percentage is not None and prev_battery_percent is not None):
+            # Calculate battery charging rate (percentage per hour)
+            # This is a simplified calculation - you might want to use time-based calculation
+            battery_change = current_battery_percent - prev_battery_percent
+            
+            if battery_change < threshold_battery_slope:
+                send_telegram_alert(
+                    f"🔋 Solar generating {solar_power:.2f} W but battery not charging properly. "
+                    f"Battery level: {battery_percentage}% (change: {battery_change:.2f}%). "
+                    "Check battery connections or health.",
+                    "battery_not_charging"
+                )
+                
+    except Exception as e:
+        print(f"❌ Error in alert system: {str(e)}")
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -512,73 +617,8 @@ def health_check():
         "thingsboard": "configured" if THINGSBOARD_ACCESS_TOKEN != 'YOUR_DEVICE_ACCESS_TOKEN' else "not_configured"
     }), 200
 
-#..........................................................................................................................................................
-#def alerts():
-
-
-    #1 Alert for overcharge or discharge
-    if currentbatterypercent==100:
-        #send alerts
-    
-    if currentbatterypercent<15:
-        #send laert
-
-    
-
-
-    #2 Sun is sufficient but panel not produce power enough as it should be:
-    
-    solar_power=(solar_voltage*solar_current)/1000 # both should be global variables
-    
-    if irradiance in range(900,1200):
-        if solar_power not in range(0.31,0.37):   # maximum 0.36 watt power we can produce from one 6V panel
-            #send alert
-    if irradiance in range(600,900):
-        if solar_power not in range(0.22,0.30):
-                # Send alert
-    if irradiance in range(350,600):
-        if solar_power not in range(0.14,0.22):
-                # send alert
-    if irradiance in range(150,350):
-         if solar_power not in range(0.05,0.14):
-                # send alert
-    if irradiance<100:
-        if solar_power not in range(0.0,0.05):
-                #send alert
-    
-    
-
-
-    #3 overload conditions:
-    if (voltage*current/1000)>inverterrating:
-        #send alert
-
-   
-
-
-    #4 sudden drop in sunlight:         
-    irradiance=light_intensity/120   # conversion of lux to irradiance
-    currentlightintesity=irradiance
-    lightslope=(currentlightintesity-prevlightintesity)/timegap  # timegap is the time interval after which we will send and read data
-    if lightslope<thresholdslope:
-        #send alert
-    prevlightintesity=currentlightintesity
-
-
-
-
-    #5 Solar generate power But battery not charge:
-       
-    if(solar_power!=0):  # solar produces power 
-        
-        batterypercentslope=(currentbatterypercent-prevbatterypercent)/timegap  # the time interval i which esp32 send readings
-        if thresholdbatteryslope<thresholdbatteryslope:
-            #send alert battery not charges
-            # we will later add count method for more accuracy
-#....................................................................................................................................................
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    # REMOVED: send_telegram_message("alert from server") - This was causing the error
     app.run(host='0.0.0.0', port=port, debug=False)
 else:
     application = app
