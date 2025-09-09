@@ -50,9 +50,9 @@ BAREILLY_LON = 79.4151
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
 # Telegram token and id - FIXED: Use environment variables correctly
-TELEGRAM_BOT_TOKEN = os.environ.get('8352010252:AAFxUDRp1ihGFQk_cu4ifQgQ8Yi4a_UVpDA')
-TELEGRAM_CHAT_ID = os.environ.get('5625474222')
-
+# Telegram token and id - FIXED: Use environment variables correctly
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '8352010252:AAFxUDRp1ihGFQk_cu4ifQgQ8Yi4a_UVpDA')
+TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '5625474222')
 # ThingsBoard Configuration
 THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.io')
 THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'Z1kBA2x2yG6R661ArK7E')
