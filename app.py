@@ -23,6 +23,18 @@ battery_percentage = None
 light_intensity = None
 battery_voltage = None
 
+#edit global varibale:
+prevlightintesity=0
+currentlightintesity=0
+lightslope=0       
+thresholdslope=0   # set this as per our project
+irradiance=0
+prevbatterypercent=0
+currentbatterypercent=0
+batterypercentslope=0
+thresholdbatteryslope=0  # set this as per our need
+
+
 # Weather data cache
 weather_cache = None
 weather_last_updated = None
