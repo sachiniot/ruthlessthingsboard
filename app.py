@@ -192,6 +192,7 @@ def receive_esp32_data():
     global prev_battery_percent, current_battery_percent
     
     print("📨 Received POST request to /esp32-data")
+    send_telegram_alert("📨 Received POST request to /esp32-data")
     
     try:
         data = request.get_json()
