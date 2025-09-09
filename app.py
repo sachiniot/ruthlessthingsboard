@@ -33,6 +33,7 @@ prevbatterypercent=0
 currentbatterypercent=0
 batterypercentslope=0
 thresholdbatteryslope=0  # set this as per our need
+inverterrating=0  # set as per our project
 
 
 # Weather data cache
@@ -62,6 +63,7 @@ def home():
         "endpoints": {
             "POST /esp32-data": "Receive data from ESP32",
             "GET /weather": "Get weather data",
+            "GET /hourly-forecast": "Get hourly weather forecast",  # Added this endpoint
             "GET /combined-data": "Get combined ESP32 and weather data",
             "GET /test-open-meteo": "Test Open-Meteo API connection",
             "GET /test-params": "Check current parameter values",
@@ -95,7 +97,7 @@ def send_to_thingsboard(device_token, telemetry_data):
         
         headers = {'Content-Type': 'application/json'}
         
-        print(f"📤 Sending to ThingsBoard: {url}")
+        print(f"📤 Sending to ThingsBoard: {url")
         response = requests.post(url, json=telemetry_with_ts, headers=headers, timeout=10)
         response.raise_for_status()
         
@@ -181,7 +183,7 @@ def send_data_to_thingsboard():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/esp32-data', methods=['POST'])
+@app.route('/esp32-data', methods['POST'])
 def receive_esp32_data():
     global box_temp, frequency, power_factor, voltage, current, power, energy
     global solar_voltage, solar_current, solar_power, battery_percentage
@@ -314,14 +316,18 @@ def get_weather_data(force_refresh=False):
             'latitude': BAREILLY_LAT,
             'longitude': BAREILLY_LON,
             'current': 'temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m',
-            'timezone': 'auto'
+            'hourly': 'temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,cloud_cover,wind_speed_10m',
+            'timezone': 'auto',
+            'forecast_days': 2
         }
         
         response = requests.get(OPEN_METEO_URL, params=params, timeout=15)
-        response.raise_forstatus()
+        response.raise_for_status()
         data = response.json()
         
         current = data.get('current', {})
+        hourly = data.get('hourly', {})
+        
         current_weather = {
             'temperature': current.get('temperature_2m'),
             'feels_like': current.get('apparent_temperature'),
@@ -333,8 +339,30 @@ def get_weather_data(force_refresh=False):
             'timestamp': datetime.now().isoformat()
         }
         
+        # Process hourly forecast data for the next few hours
+        hourly_forecast = []
+        if hourly and 'time' in hourly:
+            current_time = datetime.now()
+            for i in range(len(hourly['time'])):
+                hour_time = datetime.fromisoformat(hourly['time'][i].replace('Z', '+00:00'))
+                
+                # Only include future hours (next 12 hours)
+                if hour_time > current_time and (hour_time - current_time) <= timedelta(hours=12):
+                    hourly_data = {
+                        'time': hourly['time'][i],
+                        'temperature': hourly['temperature_2m'][i] if i < len(hourly['temperature_2m']) else None,
+                        'humidity': hourly['relative_humidity_2m'][i] if i < len(hourly['relative_humidity_2m']) else None,
+                        'precipitation': hourly['precipitation'][i] if i < len(hourly['precipitation']) else None,
+                        'rain': hourly['rain'][i] if i < len(hourly['rain']) else None,
+                        'weather_code': hourly['weather_code'][i] if i < len(hourly['weather_code']) else None,
+                        'cloud_cover': hourly['cloud_cover'][i] if i < len(hourly['cloud_cover']) else None,
+                        'wind_speed': hourly['wind_speed_10m'][i] if i < len(hourly['wind_speed_10m']) else None
+                    }
+                    hourly_forecast.append(hourly_data)
+        
         weather_data = {
             'current': current_weather,
+            'hourly_forecast': hourly_forecast,
             'location': {'lat': BAREILLY_LAT, 'lon': BAREILLY_LON, 'name': 'Bareilly, India'},
             'last_updated': datetime.now().isoformat(),
             'source': 'open-meteo'
@@ -370,6 +398,23 @@ def weather():
         force_refresh = request.args.get('force_refresh', 'false').lower() == 'true'
         weather_data = get_weather_data(force_refresh=force_refresh)
         return jsonify(weather_data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/hourly-forecast', methods=['GET'])
+def hourly_forecast():
+    try:
+        force_refresh = request.args.get('force_refresh', 'false').lower() == 'true'
+        weather_data = get_weather_data(force_refresh=force_refresh)
+        
+        if 'error' in weather_data:
+            return jsonify({"error": weather_data['error']}), 500
+            
+        return jsonify({
+            "hourly_forecast": weather_data.get('hourly_forecast', []),
+            "location": weather_data.get('location', {}),
+            "last_updated": weather_data.get('last_updated')
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -467,8 +512,8 @@ def health_check():
         "thingsboard": "configured" if THINGSBOARD_ACCESS_TOKEN != 'YOUR_DEVICE_ACCESS_TOKEN' else "not_configured"
     }), 200
 
-
-def alerts():
+#..........................................................................................................................................................
+#def alerts():
 
 
     #1 Alert for overcharge or discharge
@@ -486,19 +531,19 @@ def alerts():
     solar_power=(solar_voltage*solar_current)/1000 # both should be global variables
     
     if irradiance in range(900,1200):
-        if solarpower not in range(0.31,0.37):   # maximum 0.36 watt power we can produce from one 6V panel
+        if solar_power not in range(0.31,0.37):   # maximum 0.36 watt power we can produce from one 6V panel
             #send alert
     if irradiance in range(600,900):
-        if solarpower not in range(0.22,0.30):
+        if solar_power not in range(0.22,0.30):
                 # Send alert
     if irradiance in range(350,600):
-        if solarpower not in range(0.14,0.22):
+        if solar_power not in range(0.14,0.22):
                 # send alert
     if irradiance in range(150,350):
-         if solarpower not in range(0.05,0.14):
+         if solar_power not in range(0.05,0.14):
                 # send alert
     if irradiance<100:
-        if solarpower not in range(0.0,0.05):
+        if solar_power not in range(0.0,0.05):
                 #send alert
     
     
@@ -512,7 +557,7 @@ def alerts():
 
 
     #4 sudden drop in sunlight:         
-    irradiance=lightintesity/120   # conversion of lux to irradiance
+    irradiance=light_intensity/120   # conversion of lux to irradiance
     currentlightintesity=irradiance
     lightslope=(currentlightintesity-prevlightintesity)/timegap  # timegap is the time interval after which we will send and read data
     if lightslope<thresholdslope:
@@ -530,7 +575,7 @@ def alerts():
         if thresholdbatteryslope<thresholdbatteryslope:
             #send alert battery not charges
             # we will later add count method for more accuracy
-
+#....................................................................................................................................................
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     # REMOVED: send_telegram_message("alert from server") - This was causing the error
