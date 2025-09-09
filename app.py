@@ -212,17 +212,12 @@ def receive_esp32_data():
         battery_voltage = data.get('battery_voltage') or data.get('batteryVoltage')
         
         print(f"✅ Box Temp: {box_temp}°C, Power: {power}W, Solar: {solar_power}W, Battery: {battery_percentage}%")
+        alerts()
         
-        # Check for critical conditions and send alerts
-        if battery_percentage is not None and battery_percentage < 20:
-            send_telegram_alert(f"🔋 Low battery alert: {battery_percentage}% remaining!")
+
+
         
-        if box_temp is not None and box_temp > 50:
-            send_telegram_alert(f"🌡️ High temperature alert: {box_temp}°C detected!")
-        
-        if solar_power is not None and solar_power < 10 and light_intensity is not None and light_intensity > 50000:
-            send_telegram_alert(f"⚡ Solar panel issue: High light ({light_intensity} lux) but low power ({solar_power}W)")
-        
+               
         # Send to ThingsBoard (your existing code)
         if any([box_temp, power, solar_power]):
             telemetry_data = {
@@ -471,6 +466,70 @@ def health_check():
         "telegram": telegram_status,
         "thingsboard": "configured" if THINGSBOARD_ACCESS_TOKEN != 'YOUR_DEVICE_ACCESS_TOKEN' else "not_configured"
     }), 200
+
+
+def alerts():
+
+
+    #1 Alert for overcharge or discharge
+    if currentbatterypercent==100:
+        #send alerts
+    
+    if currentbatterypercent<15:
+        #send laert
+
+    
+
+
+    #2 Sun is sufficient but panel not produce power enough as it should be:
+    
+    solar_power=(solar_voltage*solar_current)/1000 # both should be global variables
+    
+    if irradiance in range(900,1200):
+        if solarpower not in range(0.31,0.37):   # maximum 0.36 watt power we can produce from one 6V panel
+            #send alert
+    if irradiance in range(600,900):
+        if solarpower not in range(0.22,0.30):
+                # Send alert
+    if irradiance in range(350,600):
+        if solarpower not in range(0.14,0.22):
+                # send alert
+    if irradiance in range(150,350):
+         if solarpower not in range(0.05,0.14):
+                # send alert
+    if irradiance<100:
+        if solarpower not in range(0.0,0.05):
+                #send alert
+    
+    
+
+
+    #3 overload conditions:
+    if (voltage*current/1000)>inverterrating:
+        #send alert
+
+   
+
+
+    #4 sudden drop in sunlight:         
+    irradiance=lightintesity/120   # conversion of lux to irradiance
+    currentlightintesity=irradiance
+    lightslope=(currentlightintesity-prevlightintesity)/timegap  # timegap is the time interval after which we will send and read data
+    if lightslope<thresholdslope:
+        #send alert
+    prevlightintesity=currentlightintesity
+
+
+
+
+    #5 Solar generate power But battery not charge:
+       
+    if(solar_power!=0):  # solar produces power 
+        
+        batterypercentslope=(currentbatterypercent-prevbatterypercent)/timegap  # the time interval i which esp32 send readings
+        if thresholdbatteryslope<thresholdbatteryslope:
+            #send alert battery not charges
+            # we will later add count method for more accuracy
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
