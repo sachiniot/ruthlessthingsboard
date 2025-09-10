@@ -34,8 +34,18 @@ current_battery_percent = 0
 battery_percent_slope = 0
 threshold_battery_slope = 0.1  # Set appropriate threshold for battery charging rate
 inverter_rating = 500  # Set your inverter rating in watts
-last_alert_time = {}
-ALERT_COOLDOWN = 3600  # 1 hour cooldown between alerts of the same type
+predicttotalenergy=0
+averageenergyconsume=0  # in same interval in which total predict energy calculated calculated it like avg power of one day then avg power of this time-?
+
+alert1=None
+alert2=None
+alert3=None
+alert4=None
+alert5=None
+alert6=None
+alert7=None
+alert8=None
+
 
 # Weather data cache
 weather_cache = None
@@ -531,10 +541,10 @@ def check_alerts():
         alert5 = None
 
         # 1 Alert for overcharge or discharge
-        if currentbatterypercent == 100:
+        if current_battery_percent == 100:
             # send alerts
             alert1 = "Overcharge!"
-        if currentbatterypercent < 10:
+        if current_battery_percent < 10:
             # send alert
             alert1 = "Discharge!"
 
@@ -567,28 +577,28 @@ def check_alerts():
                 alert2 = "solar panel low efficiency!"
 
         # 3 overload conditions:
-        if (voltage * current / 1000) > inverterrating:
+        if (voltage * current / 1000) > inverter_rating:
             # send alert
             alert3 = "Overload!"
 
         # 4 sudden drop in sunlight:         
         irradiance = light_intensity / 120   # conversion of lux to irradiance
-        currentlightintesity = irradiance
-        lightslope = (currentlightintesity - prevlightintesity) / timegap  # timegap is the time interval after which we will send and read data
-        if lightslope < thresholdslope:
+        current_light_intesity = irradiance
+        lightslope = (current_light_intesity - prev_light_intesity) / timegap  # timegap is the time interval after which we will send and read data
+        if light_slope < threshold_slope:
             # send alert
             alert4 = "Sudden drop in sun light!"
-        prevlightintesity = currentlightintesity
+        prev_light_intesity = current_light_intesity
 
         # 5 Solar generate power But battery not charge:
         if solar_power != 0:  # solar produces power 
-            batterypercentslope = (currentbatterypercent - prevbatterypercent) / timegap  # time interval in which esp32 sends readings
-            if batterypercentslope < thresholdbatteryslope:   # fixed logic here
+            battery_percent_slope = (current_battery_percent - prev_battery_percent) / timegap  # time interval in which esp32 sends readings
+            if battery_percent_slope < threshold_battery_slope:   # fixed logic here
                 # send alert battery not charging
                 alert5 = "Battery not charging!"
                 # we will later add count method for more accuracy
 
-        return alert1, alert2, alert3, alert4, alert5
+       
 
     except Exception as e:
         print(f"❌ Error in alert system: {str(e)}")
