@@ -593,6 +593,30 @@ def check_alerts():
     except Exception as e:
         print(f"❌ Error in alert system: {str(e)}")
 #........................................................................................................................
+def predictionalerts():
+    try:
+        if averageenergyconsume > predicttotalenergy:
+            # 6. send alert that consumption is higher than expected solar generation
+            alert6 = "consumption is higher than expected solar generation!"
+        
+            if battery_percentage < 40:
+                # 7. send alert that Battery is low. Risk of blackout in future 
+                alert7 = "Battery is low. Risk of blackout in future!"
+                # take action to switch off relay of non essential load
+
+        if averageenergyconsume < predicttotalenergy:
+            # show that solar generation is sufficient as per your need
+            if battery_percentage > 40 and battery_percentage < 80:
+                # show that you can turn on non essential loads
+                pass
+
+            if battery_percentage > 80:
+                # 8. your battery may overcharge in next upcoming hours
+                alert8 = "Battery may overcharge in next upcoming hours!"
+    except Exception as e:
+        print(f"❌ Error in prediction alerts: {str(e)}")
+#.........................................................................................................................................
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
