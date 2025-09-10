@@ -501,6 +501,7 @@ def send_telegram_alert(message, alert_type="general"):
 def handle_alert():
     """Endpoint to receive alerts and forward to Telegram"""
     try:
+        
         data = request.get_json()
         
         if not data or 'message' not in data:
@@ -520,94 +521,78 @@ def handle_alert():
     except Exception as e:
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
-# Alert checking functions
+# Alert checking functions.....................................................................................................
 def check_alerts():
-    """Check all alert conditions and send notifications if needed"""
     try:
-        # 1. Alert for overcharge or discharge
-        if battery_percentage is not None:
-            if battery_percentage >= 100:
-                send_telegram_alert(
-                    f"⚠️ Battery is fully charged ({battery_percentage}%). "
-                    "Consider reducing charging to prevent overcharging.",
-                    "battery_full"
-                )
-            elif battery_percentage < 15:
-                send_telegram_alert(
-                    f"🔋 Battery level critical ({battery_percentage}%). "
-                    "Please connect to grid power or reduce load.",
-                    "battery_low"
-                )
-        
-        # 2. Check if solar panel is underperforming
-        if solar_voltage is not None and solar_current is not None:
-            solar_power_value = (solar_voltage * solar_current) / 1000  # Convert to kW
-            
-            # Convert light intensity to irradiance (approximate conversion)
-            if light_intensity is not None:
-                irradiance_value = light_intensity / 120  # Conversion of lux to irradiance
-                
-                # Check if solar power is appropriate for the irradiance level
-                if irradiance_value >= 900 and solar_power_value < 0.31:
-                    send_telegram_alert(
-                        f"☀️ High sunlight but low solar production. "
-                        f"Irradiance: {irradiance_value:.2f} W/m², "
-                        f"Solar Power: {solar_power_value:.2f} kW. "
-                        "Check panel cleanliness or connections.",
-                        "solar_underperformance"
-                    )
-                elif irradiance_value >= 600 and solar_power_value < 0.22:
-                    send_telegram_alert(
-                        f"☀️ Good sunlight but low solar production. "
-                        f"Irradiance: {irradiance_value:.2f} W/m², "
-                        f"Solar Power: {solar_power_value:.2f} kW. "
-                        "Check panel cleanliness or connections.",
-                        "solar_underperformance"
-                    )
-        
-        # 3. Check for overload conditions
-        if voltage is not None and current is not None:
-            power_value = (voltage * current) / 1000  # Convert to kW
-            if power_value > inverter_rating:
-                send_telegram_alert(
-                    f"⚡ System overload detected! "
-                    f"Power: {power_value:.2f} kW, "
-                    f"Inverter Rating: {inverter_rating} kW. "
-                    "Please reduce load to prevent damage.",
-                    "overload"
-                )
-        
-        # 4. Check for sudden drop in sunlight
-        if light_intensity is not None:
-            # Calculate rate of change (simple difference for now)
-            light_change = current_light_intensity - prev_light_intensity
-            
-            if light_change < threshold_slope and current_light_intensity > 0:
-                send_telegram_alert(
-                    f"🌥️ Sudden drop in sunlight detected. "
-                    f"Light intensity dropped from {prev_light_intensity} to {current_light_intensity}. "
-                    "This may affect solar production.",
-                    "light_drop"
-                )
-        
-        # 5. Check if solar is generating power but battery isn't charging
-        if (solar_power is not None and solar_power > 0 and 
-            battery_percentage is not None and prev_battery_percent is not None):
-            # Calculate battery charging rate (percentage per hour)
-            # This is a simplified calculation - you might want to use time-based calculation
-            battery_change = current_battery_percent - prev_battery_percent
-            
-            if battery_change < threshold_battery_slope:
-                send_telegram_alert(
-                    f"🔋 Solar generating {solar_power:.2f} W but battery not charging properly. "
-                    f"Battery level: {battery_percentage}% (change: {battery_change:.2f}%). "
-                    "Check battery connections or health.",
-                    "battery_not_charging"
-                )
-                
+        alert1 = None
+        alert2 = None
+        alert3 = None
+        alert4 = None
+        alert5 = None
+
+        # 1 Alert for overcharge or discharge
+        if currentbatterypercent == 100:
+            # send alerts
+            alert1 = "Overcharge!"
+        if currentbatterypercent < 10:
+            # send alert
+            alert1 = "Discharge!"
+
+        # 2 Sun is sufficient but panel not produce power enough as it should be:
+        solar_power = (solar_voltage * solar_current) / 1000  # both should be global variables
+
+        if irradiance in range(900, 1200):
+            if solar_power not in range(0.31, 0.37):
+                # send alert
+                alert2 = "solar panel low efficiency!"
+
+        if irradiance in range(600, 900):
+            if solar_power not in range(0.22, 0.30):
+                # send alert
+                alert2 = "solar panel low efficiency!"
+
+        if irradiance in range(350, 600):
+            if solar_power not in range(0.14, 0.22):
+                # send alert
+                alert2 = "solar panel low efficiency!"
+
+        if irradiance in range(150, 350):
+            if solar_power not in range(0.05, 0.14):
+                # send alert
+                alert2 = "solar panel low efficiency!"
+
+        if irradiance < 100:
+            if solar_power not in range(0.0, 0.05):
+                # send alert
+                alert2 = "solar panel low efficiency!"
+
+        # 3 overload conditions:
+        if (voltage * current / 1000) > inverterrating:
+            # send alert
+            alert3 = "Overload!"
+
+        # 4 sudden drop in sunlight:         
+        irradiance = light_intensity / 120   # conversion of lux to irradiance
+        currentlightintesity = irradiance
+        lightslope = (currentlightintesity - prevlightintesity) / timegap  # timegap is the time interval after which we will send and read data
+        if lightslope < thresholdslope:
+            # send alert
+            alert4 = "Sudden drop in sun light!"
+        prevlightintesity = currentlightintesity
+
+        # 5 Solar generate power But battery not charge:
+        if solar_power != 0:  # solar produces power 
+            batterypercentslope = (currentbatterypercent - prevbatterypercent) / timegap  # time interval in which esp32 sends readings
+            if batterypercentslope < thresholdbatteryslope:   # fixed logic here
+                # send alert battery not charging
+                alert5 = "Battery not charging!"
+                # we will later add count method for more accuracy
+
+        return alert1, alert2, alert3, alert4, alert5
+
     except Exception as e:
         print(f"❌ Error in alert system: {str(e)}")
-
+#........................................................................................................................
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
