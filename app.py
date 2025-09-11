@@ -135,17 +135,7 @@ def resend_weather_to_thingsboard():
             send_telegram_alert("Cannot resend weatherdata!","server error")
             return False
         
-        telemetry_data = {
-            "temperature": weather_data['current'].get('temperature'),
-            "humidity": weather_data['current'].get('humidity'),
-            "cloud_cover": weather_data['current'].get('cloud_cover'),
-            "wind_speed": weather_data['current'].get('wind_speed'),
-            "precipitation": weather_data['current'].get('precipitation'),
-            "weather_code": weather_data['current'].get('weather_code'),
-            "location_lat": BAREILLY_LAT,
-            "location_lon": BAREILLY_LON,
-            "data_source": "open-meteo"
-        }
+        telemetry_data = get_complete_telemetry_data()
         
         print(f"🔄 Resending weather data to ThingsBoard")
         success = send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
@@ -185,15 +175,7 @@ def send_data_to_thingsboard():
             return jsonify({"success": success, "device": "weather", "message": "Weather data sent to ThingsBoard"})
         elif device_type == 'solar':
             if any([box_temp, power, solar_power]):
-                telemetry_data = {
-                    "box_temperature": box_temp,
-                    "power": power,
-                    "solar_power": solar_power,
-                    "battery_percentage": battery_percentage,
-                    "voltage": voltage,
-                    "current": current,
-                    "light_intensity": light_intensity
-                }
+                telemetry_data = get_complete_telemetry_data()
                 success = send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
                 return jsonify({"success": success, "device": "solar", "data_sent": telemetry_data})
         
@@ -249,29 +231,7 @@ def receive_esp32_data():
        
         # Send to ThingsBoard
         if any([box_temp, power, solar_power]):
-            telemetry_data = {
-                
-                "power": power,
-                "solar_power": solar_power,
-                "battery_percentage": battery_percentage,
-                "voltage": voltage,
-                "current": current,
-                "solar_voltage":solar_voltage,
-                "solar_current":solar_current,
-                "light_intensity": light_intensity,
-                "energy": energy,
-                "frequency": frequency,
-                "nonessentialrelaystate":nonessentialrelaystate,
-                "alert1":alert1,
-                "alert2":alert2,
-                "alert3":alert3,
-                "alert4":alert4,
-                "alert5":alert5,
-                "alert6":alert6,
-                "alert7":alert7,
-                "alert8":alert8,
-      
-            }
+            telemetry_data = get_complete_telemetry_data()
             send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
         
         # Get current weather data to send back to ESP32
@@ -419,17 +379,7 @@ def get_weather_data(force_refresh=False):
         
         print(f"✅ Weather data: {current_weather['temperature']}°C, {current_weather['humidity']}%")
         
-        telemetry_data = {
-            "temperature": current_weather['temperature'],
-            "humidity": current_weather['humidity'],
-            "cloud_cover": current_weather['cloud_cover'],
-            "wind_speed": current_weather['wind_speed'],
-            "precipitation": current_weather['precipitation'],
-            "weather_code": current_weather['weather_code'],
-            "location_lat": BAREILLY_LAT,
-            "location_lon": BAREILLY_LON
-        }
-        send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
+        
         
         return weather_data
         
@@ -682,6 +632,61 @@ def predictionalerts():
     except Exception as e:
         print(f"❌ Error in prediction alerts: {str(e)}")
 #.........................................................................................................................................
+def get_complete_telemetry_data():
+    """Return complete standardized telemetry data for ThingsBoard"""
+    # Get current weather data
+    weather_data = get_weather_data(force_refresh=False)
+    
+    # Build complete telemetry data
+    telemetry_data = {
+        # ESP32 Sensor Data
+        "box_temperature": box_temp,
+        "frequency": frequency,
+        "power_factor": power_factor,
+        "voltage": voltage,
+        "current": current,
+        "power": power,
+        "energy": energy,
+        "solar_voltage": solar_voltage,
+        "solar_current": solar_current,
+        "solar_power": solar_power,
+        "battery_percentage": battery_percentage,
+        "battery_voltage": battery_voltage,
+        "light_intensity": light_intensity,
+        
+        # Control States
+        "nonessentialrelaystate": nonessentialrelaystate,
+        
+        # Alert States
+        "alert1": alert1,
+        "alert2": alert2,
+        "alert3": alert3,
+        "alert4": alert4,
+        "alert5": alert5,
+        "alert6": alert6,
+        "alert7": alert7,
+        "alert8": alert8,
+        
+        # Weather Data
+        "weather_temperature": weather_data['current'].get('temperature') if weather_data and not 'error' in weather_data else None,
+        "weather_humidity": weather_data['current'].get('humidity') if weather_data and not 'error' in weather_data else None,
+        "weather_cloud_cover": weather_data['current'].get('cloud_cover') if weather_data and not 'error' in weather_data else None,
+        "weather_wind_speed": weather_data['current'].get('wind_speed') if weather_data and not 'error' in weather_data else None,
+        "weather_precipitation": weather_data['current'].get('precipitation') if weather_data and not 'error' in weather_data else None,
+        "weather_code": weather_data['current'].get('weather_code') if weather_data and not 'error' in weather_data else None,
+        "weather_feels_like": weather_data['current'].get('feels_like') if weather_data and not 'error' in weather_data else None,
+        
+        # Location
+        "location_lat": BAREILLY_LAT,
+        "location_lon": BAREILLY_LON,
+        
+        # Metadata
+        "timestamp": datetime.now().isoformat(),
+        "data_source": "solar_monitoring_system"
+    }
+    
+    # Remove None values to keep payload clean
+    return {k: v for k, v in telemetry_data.items() if v is not None}
 
 @app.route('/health', methods=['GET'])
 def health_check():
