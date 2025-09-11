@@ -152,7 +152,7 @@ def resend_weather_to_thingsboard():
             print("✅ Weather data resent successfully to ThingsBoard!")
         else:
             print("❌ Failed to resend weather data to ThingsBoard")
-            send_telegram_alerts("Failed to resend weather data to Thingsboard","server errror")
+            send_telegram_alert("Failed to resend weather data to Thingsboard","server errror")
             
         return success
         
@@ -212,7 +212,7 @@ def receive_esp32_data():
     try:
         data = request.get_json()
         if not data:
-            send_telegram_alert("No JSON data recieved")
+            send_telegram_alert("No JSON data recieved","data error")
             return jsonify({"error": "No JSON data received"}), 400
         
         print(f"✅ JSON data received: {data}")
@@ -410,7 +410,7 @@ def get_weather_data(force_refresh=False):
         
     except Exception as e:
         error_msg = f"Weather API error: {str(e)}"
-        send_telegram_alert("Weather API error")
+        send_telegram_alert("Weather API error","api error")
         print(f"❌ {error_msg}")
         return {'error': error_msg}
 
@@ -598,7 +598,7 @@ def check_alerts():
             current_light_intesity = irradiance
             # Assuming timegap is 5 minutes (300 seconds) between readings
             timegap = 300
-            light_slope = (current_light_intesity - prev_light_intensity) / timegap
+            light_slope = (current_light_intensity - prev_light_intensity) / timegap
             if light_slope < threshold_slope:
                 alert4 = "Sudden drop in sun light!"
                 send_telegram_alert(alert4, "weather")
