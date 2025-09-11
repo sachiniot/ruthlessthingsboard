@@ -39,8 +39,8 @@ ALERT_COOLDOWN = 300  # 5 minutes in seconds
 nonessentialrelaystate=1
 
 
-averageenergyconsume=3.29  # in same interval in which total predict energy calculated calculated it like avg power of one day then avg power of this time-?
-predicttotalenergy=2
+averageenergyconsume=2.5  # in same interval in which total predict energy calculated calculated it like avg power of one day then avg power of this time-?
+predicttotalenergy=random(0,4)
 alert1=None
 alert2=None
 alert3=None
