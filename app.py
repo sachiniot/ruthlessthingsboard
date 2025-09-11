@@ -250,12 +250,14 @@ def receive_esp32_data():
         # Send to ThingsBoard
         if any([box_temp, power, solar_power]):
             telemetry_data = {
-                "box_temperature": box_temp,
+                
                 "power": power,
                 "solar_power": solar_power,
                 "battery_percentage": battery_percentage,
                 "voltage": voltage,
                 "current": current,
+                "solar_voltage":solar_voltage,
+                "solar_current":solar_current,
                 "light_intensity": light_intensity,
                 "energy": energy,
                 "frequency": frequency,
