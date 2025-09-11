@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from datetime import datetime, timedelta
 import requests
+import random
 import math
 import os
 from flask_cors import CORS  
@@ -40,7 +41,7 @@ nonessentialrelaystate=1
 
 
 averageenergyconsume=2.5  # in same interval in which total predict energy calculated calculated it like avg power of one day then avg power of this time-?
-predicttotalenergy=random(0,4)
+predicttotalenergy
 alert1=None
 alert2=None
 alert3=None
@@ -649,6 +650,7 @@ def check_alerts():
 #........................................................................................................................
 def predictionalerts():
     global alert6, alert7, alert8, nonessentialrelaystate
+    predicttotalenergy=random(0,4)
     try:
         alert6=alert7=alert8=None
         if averageenergyconsume > predicttotalenergy:
