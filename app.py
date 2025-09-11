@@ -241,9 +241,7 @@ def receive_esp32_data():
         prev_light_intensity = current_light_intensity
         current_light_intensity = light_intensity if light_intensity else 0
         
-        # Check for alerts
-        check_alerts()
-        
+       
         # Send to ThingsBoard
         if any([box_temp, power, solar_power]):
             telemetry_data = {
