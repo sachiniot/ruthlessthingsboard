@@ -62,8 +62,7 @@ BAREILLY_LON = 79.4151
 # Open-Meteo API
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
-# Telegram token and id - FIXED: Use environment variables correctly
-# Telegram token and id - FIXED: Use environment variables correctly
+
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '8352010252:AAFxUDRp1ihGFQk_cu4ifQgQ8Yi4a_UVpDA')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '5625474222')
 # ThingsBoard Configuration
@@ -123,6 +122,7 @@ def send_to_thingsboard(device_token, telemetry_data):
         return False
     except Exception as e:
         print(f"❌ Error sending to ThingsBoard: {str(e)}")
+        send_telegram_alert("Error sending to thingsboard","server error")
         return False
 
 def resend_weather_to_thingsboard():
@@ -130,6 +130,7 @@ def resend_weather_to_thingsboard():
         weather_data = get_weather_data(force_refresh=False)
         if 'error' in weather_data:
             print(f"❌ Cannot resend weather data: {weather_data['error']}")
+            send_telegram_alert("Cannot resend weatherdata!","server error")
             return False
         
         telemetry_data = {
@@ -151,6 +152,7 @@ def resend_weather_to_thingsboard():
             print("✅ Weather data resent successfully to ThingsBoard!")
         else:
             print("❌ Failed to resend weather data to ThingsBoard")
+            send_telegram_alerts("Failed to resend weather data to Thingsboard","server errror")
             
         return success
         
@@ -205,11 +207,12 @@ def receive_esp32_data():
     global prev_battery_percent, current_battery_percent
     
     print("📨 Received POST request to /esp32-data")
-    send_telegram_alert("📨 Received POST request to /esp32-data")
+    
     
     try:
         data = request.get_json()
         if not data:
+            send_telegram_alert("No JSON data recieved")
             return jsonify({"error": "No JSON data received"}), 400
         
         print(f"✅ JSON data received: {data}")
@@ -407,6 +410,7 @@ def get_weather_data(force_refresh=False):
         
     except Exception as e:
         error_msg = f"Weather API error: {str(e)}"
+        send_telegram_alert("Weather API error")
         print(f"❌ {error_msg}")
         return {'error': error_msg}
 
@@ -485,7 +489,7 @@ def send_telegram_alert(message, alert_type="general"):
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     
-    # Add emoji and formatting for better visibility
+   
     formatted_message = f"🚨 <b>Solar Monitor Alert</b> 🚨\n\n{message}\n\n<i>Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</i>"
     
     payload = {
