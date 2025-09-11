@@ -7,7 +7,7 @@ const char* ssid = "OPPO A59 5G";
 const char* password = "c2m255cg";
 
 // Your Render server URL (replace with your actual Render URL)
-const char* serverBaseURL = "https://ruthlessthingsboard-paw0.onrender.com";
+const char* serverBaseURL = "https://ruthlessthingsboard-88ik.onrender.com";
 const char* dataEndpoint = "/esp32-data";
 const char* weatherEndpoint = "/weather";
 const char* hourlyEndpoint = "/hourly-forecast";
@@ -150,20 +150,32 @@ void connectToWiFi() {
 void updateSensorData() {
   // Simulate changing sensor values with realistic patterns
   sensorData.box_temp = 25.0 + random(0, 100) / 20.0; // 25-30°C
-  sensorData.voltage = 220 + random(-15, 15);
-  sensorData.current = 4.0 + random(0, 200) / 10.0;
-  sensorData.power = sensorData.voltage * sensorData.current;
-  sensorData.solar_voltage = 16.0 + random(0, 50) / 10.0;
-  sensorData.solar_current = 5.0 + random(0, 30) / 10.0;
-  sensorData.solar_power = sensorData.solar_voltage * sensorData.solar_current;
-  sensorData.battery_percentage = constrain(sensorData.battery_percentage + random(-3, 5), 0, 100);
-  sensorData.light_intensity = 500 + random(0, 1000);
-  sensorData.energy += sensorData.power / 3600; // Simulate energy accumulation
-  
+
+  // "AC" side -> actually from battery-powered DC load (scaled for Li-ion battery)
+  sensorData.voltage = 3.2 + random(0, 100) / 250.0; // 3.2–4.2V
+  sensorData.current = 0.1 + random(0, 200) / 100.0; // 0.1–2.0A
+  sensorData.power = sensorData.voltage * sensorData.current; // 0.3–8W approx.
+
+  // Solar panel (6V plate, up to ~1A)
+  sensorData.solar_voltage = 5.5 + random(0, 10) / 10.0; // 5.5–6.5V
+  sensorData.solar_current = 0.1 + random(0, 100) / 100.0; // 0.1–1.1A
+  sensorData.solar_power = sensorData.solar_voltage * sensorData.solar_current; // ~0.5–7W
+
+  // Battery (3.7V Li-ion, 2500mAh)
+  sensorData.battery_voltage = sensorData.voltage; // keep same for consistency
+  sensorData.battery_percentage = random(30,101);
+
+  // Light intensity (simulate day/night changes)
+  sensorData.light_intensity = 200 + random(0, 800); // 200–1000 lux
+
+  // Energy accumulation
+  sensorData.energy += sensorData.power / 3600; // Wh accumulation
+
   Serial.println("Updated sensor readings:");
-  Serial.printf("  Power: %.1fW, Solar: %.1fW, Battery: %.1f%%\n", 
-                sensorData.power, sensorData.solar_power, sensorData.battery_percentage);
+  Serial.printf("  Load Power: %.2fW, Solar: %.2fW, Battery: %.1f%% (%.2fV)\n", 
+                sensorData.power, sensorData.solar_power, sensorData.battery_percentage, sensorData.battery_voltage);
 }
+
 
 bool sendDataToServer() {
   HTTPClient http;
