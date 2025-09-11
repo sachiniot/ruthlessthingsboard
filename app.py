@@ -148,6 +148,40 @@ def resend_weather():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+
+
+def send_to_thingsboard(device_token, telemetry_data):
+    try:
+        if THINGSBOARD_HOST == 'http://localhost:8080' or device_token == 'YOUR_DEVICE_ACCESS_TOKEN':
+            print("⚠️ ThingsBoard not configured - skipping send")
+            return False
+            
+        url = f"{THINGSBOARD_HOST}/api/v1/{device_token}/telemetry"
+        telemetry_with_ts = {
+            "ts": int(datetime.now().timestamp() * 1000),
+            "values": telemetry_data
+        }
+        
+        headers = {'Content-Type': 'application/json'}
+        
+        print(f"📤 Sending to ThingsBoard: {url}")
+        response = requests.post(url, json=telemetry_with_ts, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        print(f"✅ Successfully sent to ThingsBoard (Status: {response.status_code})")
+        return True
+        
+    except requests.exceptions.RequestException as e:
+        print(f"❌ ThingsBoard API error: {str(e)}")
+        return False
+    except Exception as e:
+        print(f"❌ Error sending to ThingsBoard: {str(e)}")
+        send_telegram_alert("Error sending to thingsboard","server error")
+        return False
+
+
+
+
 def resend_weather_to_thingsboard():
     try:
         weather_data = get_weather_data(force_refresh=False)
