@@ -595,7 +595,7 @@ def check_alerts():
 
         # 4 sudden drop in sunlight:         
         if prev_light_intensity is not None:
-            current_light_intesity = irradiance
+            current_light_intensity = irradiance
             # Assuming timegap is 5 minutes (300 seconds) between readings
             timegap = 300
             light_slope = (current_light_intensity - prev_light_intensity) / timegap
