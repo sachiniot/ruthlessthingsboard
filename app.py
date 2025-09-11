@@ -39,6 +39,7 @@ last_alert_time = {}
 ALERT_COOLDOWN = 300  # 5 minutes in seconds
 nonessentialrelaystate=1
 
+
 averageenergyconsume=2.5  # in same interval in which total predict energy calculated calculated it like avg power of one day then avg power of this time-?
 predicttotalenergy=0
 alert1=None
@@ -49,6 +50,7 @@ alert5=None
 alert6=None
 alert7=None
 alert8=None
+
 
 # Weather data cache
 weather_cache = None
@@ -62,11 +64,12 @@ BAREILLY_LON = 79.4151
 # Open-Meteo API
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
+
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '8352010252:AAFxUDRp1ihGFQk_cu4ifQgQ8Yi4a_UVpDA')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '5625474222')
 # ThingsBoard Configuration
 THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.io')
-THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'GudRzRG8OWWm7YhUCziK')
+THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'Z1kBA2x2yG6R661ArK7E')
 
 @app.route('/')
 def home():
@@ -95,55 +98,6 @@ def home():
         "status": "active"
     })
 
-@app.route('/send-to-thingsboard', methods=['POST'])
-def send_data_to_thingsboard():
-    try:
-        data = request.get_json() or {}
-        device_type = data.get('device_type', 'weather')
-        
-        if device_type == 'weather':
-            telemetry_data = resend_weather_to_thingsboard()
-            if telemetry_data:
-                # DON'T send to ThingsBoard here - just return the prepared data
-                return jsonify({
-                    "success": True, 
-                    "device": "weather", 
-                    "message": "Weather data prepared (not sent to ThingsBoard)",
-                    "data": telemetry_data
-                })
-            else:
-                return jsonify({"success": False, "error": "No weather data available"})
-        elif device_type == 'solar':
-            if any([box_temp, power, solar_power]):
-                telemetry_data = get_complete_telemetry_data()
-                # DON'T send to ThingsBoard here - just return the prepared data
-                return jsonify({
-                    "success": True, 
-                    "device": "solar", 
-                    "message": "Solar data prepared (not sent to ThingsBoard)",
-                    "data": telemetry_data
-                })
-        
-        return jsonify({"error": "No data available to send"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/resend-weather', methods=['POST'])
-def resend_weather():
-    try:
-        telemetry_data = resend_weather_to_thingsboard()
-        if telemetry_data:
-            # DON'T send to ThingsBoard here - just return the prepared data
-            return jsonify({
-                "success": True,
-                "message": "Weather data prepared (not sent to ThingsBoard)",
-                "data": telemetry_data
-            })
-        else:
-            return jsonify({"success": False, "error": "No weather data available"})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
 def send_to_thingsboard(device_token, telemetry_data):
     try:
         if THINGSBOARD_HOST == 'http://localhost:8080' or device_token == 'YOUR_DEVICE_ACCESS_TOKEN':
@@ -160,18 +114,6 @@ def send_to_thingsboard(device_token, telemetry_data):
         
         print(f"📤 Sending to ThingsBoard: {url}")
         response = requests.post(url, json=telemetry_with_ts, headers=headers, timeout=10)
-        
-        # Check for specific error responses from ThingsBoard
-        if response.status_code == 500:
-            print(f"❌ ThingsBoard server error (500). This often indicates an issue with the device token or server configuration.")
-            return False
-        elif response.status_code == 401:
-            print(f"❌ ThingsBoard authentication error (401). Check your device access token.")
-            return False
-        elif response.status_code == 404:
-            print(f"❌ ThingsBoard device not found (404). Check your device token.")
-            return False
-            
         response.raise_for_status()
         
         print(f"✅ Successfully sent to ThingsBoard (Status: {response.status_code})")
@@ -179,10 +121,10 @@ def send_to_thingsboard(device_token, telemetry_data):
         
     except requests.exceptions.RequestException as e:
         print(f"❌ ThingsBoard API error: {str(e)}")
-        # Don't send Telegram alert for ThingsBoard errors to avoid spam
         return False
     except Exception as e:
         print(f"❌ Error sending to ThingsBoard: {str(e)}")
+        send_telegram_alert("Error sending to thingsboard","server error")
         return False
 
 def resend_weather_to_thingsboard():
@@ -190,30 +132,89 @@ def resend_weather_to_thingsboard():
         weather_data = get_weather_data(force_refresh=False)
         if 'error' in weather_data:
             print(f"❌ Cannot resend weather data: {weather_data['error']}")
-            return None
+            send_telegram_alert("Cannot resend weatherdata!","server error")
+            return False
         
-        telemetry_data = get_complete_telemetry_data()
-        print(f"🔄 Prepared weather data for ThingsBoard")
-        return telemetry_data  # Return the data instead of sending it
+        telemetry_data = {
+            "temperature": weather_data['current'].get('temperature'),
+            "humidity": weather_data['current'].get('humidity'),
+            "cloud_cover": weather_data['current'].get('cloud_cover'),
+            "wind_speed": weather_data['current'].get('wind_speed'),
+            "precipitation": weather_data['current'].get('precipitation'),
+            "weather_code": weather_data['current'].get('weather_code'),
+            "location_lat": BAREILLY_LAT,
+            "location_lon": BAREILLY_LON,
+            "data_source": "open-meteo"
+        }
+        
+        print(f"🔄 Resending weather data to ThingsBoard")
+        success = send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
+        
+        if success:
+            print("✅ Weather data resent successfully to ThingsBoard!")
+        else:
+            print("❌ Failed to resend weather data to ThingsBoard")
+            send_telegram_alert("Failed to resend weather data to Thingsboard","server errror")
+            
+        return success
         
     except Exception as e:
-        error_msg = f"Error preparing weather data: {str(e)}"
+        error_msg = f"Error resending weather data: {str(e)}"
         print(f"❌ {error_msg}")
-        return None
+        return False
+
+@app.route('/resend-weather', methods=['POST'])
+def resend_weather():
+    try:
+        success = resend_weather_to_thingsboard()
+        return jsonify({
+            "success": success,
+            "message": "Weather data resent to ThingsBoard" if success else "Failed to resend weather data"
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/send-to-thingsboard', methods=['POST'])
+def send_data_to_thingsboard():
+    try:
+        data = request.get_json() or {}
+        device_type = data.get('device_type', 'weather')
+        
+        if device_type == 'weather':
+            success = resend_weather_to_thingsboard()
+            return jsonify({"success": success, "device": "weather", "message": "Weather data sent to ThingsBoard"})
+        elif device_type == 'solar':
+            if any([box_temp, power, solar_power]):
+                telemetry_data = {
+                    "box_temperature": box_temp,
+                    "power": power,
+                    "solar_power": solar_power,
+                    "battery_percentage": battery_percentage,
+                    "voltage": voltage,
+                    "current": current,
+                    "light_intensity": light_intensity
+                }
+                success = send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
+                return jsonify({"success": success, "device": "solar", "data_sent": telemetry_data})
+        
+        return jsonify({"error": "No data available to send"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/esp32-data', methods=['POST'])
 def receive_esp32_data():
     global box_temp, frequency, power_factor, voltage, current, power, energy
     global solar_voltage, solar_current, solar_power, battery_percentage
     global light_intensity, battery_voltage, prev_light_intensity, current_light_intensity
-    global prev_battery_percent, current_battery_percent, nonessentialrelaystate
+    global prev_battery_percent, current_battery_percent,nonessentialrelaystate
     
     print("📨 Received POST request to /esp32-data")
+    
     
     try:
         data = request.get_json()
         if not data:
-            send_telegram_alert("No JSON data received","data error")
+            send_telegram_alert("No JSON data recieved","data error")
             return jsonify({"error": "No JSON data received"}), 400
         
         print(f"✅ JSON data received: {data}")
@@ -245,18 +246,38 @@ def receive_esp32_data():
         check_alerts()
         predictionalerts()
         
+       
         # Send to ThingsBoard
         if any([box_temp, power, solar_power]):
-            telemetry_data = get_complete_telemetry_data()
-            # Try to send to ThingsBoard but don't fail the request if it doesn't work
-            try:
-                send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
-            except Exception as e:
-                print(f"⚠️ ThingsBoard send failed but continuing: {str(e)}")
+            telemetry_data = {
+                
+                "power": power,
+                "solar_power": solar_power,
+                "battery_percentage": battery_percentage,
+                "voltage": voltage,
+                "current": current,
+                "solar_voltage":solar_voltage,
+                "solar_current":solar_current,
+                "light_intensity": light_intensity,
+                "energy": energy,
+                "frequency": frequency,
+                "nonessentialrelaystate":nonessentialrelaystate,
+                "alert1":alert1,
+                "alert2":alert2,
+                "alert3":alert3,
+                "alert4":alert4,
+                "alert5":alert5,
+                "alert6":alert6,
+                "alert7":alert7,
+                "alert8":alert8,
+      
+            }
+            send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
         
         # Get current weather data to send back to ESP32
         weather_data = get_weather_data(force_refresh=False)
         
+        # FIXED: Handle case where weather data contains error
         if 'error' in weather_data:
             # Return basic success response without weather data
             response_data = {
@@ -269,15 +290,16 @@ def receive_esp32_data():
             # Return response with weather data
             response_data = {
                 "message": "Data received successfully",
-                "nonessentialrelaystate": nonessentialrelaystate,
-                "alert1": alert1,
-                "alert2": alert2,
-                "alert3": alert3,
-                "alert4": alert4,
-                "alert5": alert5,
-                "alert6": alert6,
-                "alert7": alert7,
-                "alert8": alert8,
+                "nonessentialrelaystate":nonessentialrelaystate,
+                "alert1":alert1,
+                "alert2":alert2,
+                "alert3":alert3,
+                "alert4":alert4,
+                "alert5":alert5,
+                "alert6":alert6,
+                "alert7":alert7,
+                "alert8":alert8,
+                
                 "status": "ok",
                 "weather_available": True,
                 "weather": {
@@ -302,6 +324,7 @@ def receive_esp32_data():
     except Exception as e:
         print(f"❌ Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
 @app.route('/test-params', methods=['GET'])
 def test_params():
     return jsonify({
@@ -323,8 +346,6 @@ def check_config():
         "telegram_chat_id_configured": TELEGRAM_CHAT_ID is not None,
         "thingsboard_configured": THINGSBOARD_ACCESS_TOKEN != 'YOUR_DEVICE_ACCESS_TOKEN'
     })
-
-
 
 def get_weather_data(force_refresh=False):
     global weather_cache, weather_last_updated
@@ -398,7 +419,17 @@ def get_weather_data(force_refresh=False):
         
         print(f"✅ Weather data: {current_weather['temperature']}°C, {current_weather['humidity']}%")
         
-        
+        telemetry_data = {
+            "temperature": current_weather['temperature'],
+            "humidity": current_weather['humidity'],
+            "cloud_cover": current_weather['cloud_cover'],
+            "wind_speed": current_weather['wind_speed'],
+            "precipitation": current_weather['precipitation'],
+            "weather_code": current_weather['weather_code'],
+            "location_lat": BAREILLY_LAT,
+            "location_lon": BAREILLY_LON
+        }
+        send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
         
         return weather_data
         
@@ -651,61 +682,6 @@ def predictionalerts():
     except Exception as e:
         print(f"❌ Error in prediction alerts: {str(e)}")
 #.........................................................................................................................................
-def get_complete_telemetry_data():
-    """Return complete standardized telemetry data for ThingsBoard"""
-    # Get current weather data
-    weather_data = get_weather_data(force_refresh=False)
-    
-    # Build complete telemetry data
-    telemetry_data = {
-        # ESP32 Sensor Data
-        "box_temperature": box_temp,
-        "frequency": frequency,
-        "power_factor": power_factor,
-        "voltage": voltage,
-        "current": current,
-        "power": power,
-        "energy": energy,
-        "solar_voltage": solar_voltage,
-        "solar_current": solar_current,
-        "solar_power": solar_power,
-        "battery_percentage": battery_percentage,
-        "battery_voltage": battery_voltage,
-        "light_intensity": light_intensity,
-        
-        # Control States
-        "nonessentialrelaystate": nonessentialrelaystate,
-        
-        # Alert States
-        "alert1": alert1,
-        "alert2": alert2,
-        "alert3": alert3,
-        "alert4": alert4,
-        "alert5": alert5,
-        "alert6": alert6,
-        "alert7": alert7,
-        "alert8": alert8,
-        
-        # Weather Data
-        "weather_temperature": weather_data['current'].get('temperature') if weather_data and not 'error' in weather_data else None,
-        "weather_humidity": weather_data['current'].get('humidity') if weather_data and not 'error' in weather_data else None,
-        "weather_cloud_cover": weather_data['current'].get('cloud_cover') if weather_data and not 'error' in weather_data else None,
-        "weather_wind_speed": weather_data['current'].get('wind_speed') if weather_data and not 'error' in weather_data else None,
-        "weather_precipitation": weather_data['current'].get('precipitation') if weather_data and not 'error' in weather_data else None,
-        "weather_code": weather_data['current'].get('weather_code') if weather_data and not 'error' in weather_data else None,
-        "weather_feels_like": weather_data['current'].get('feels_like') if weather_data and not 'error' in weather_data else None,
-        
-        # Location
-        "location_lat": BAREILLY_LAT,
-        "location_lon": BAREILLY_LON,
-        
-        # Metadata
-        "timestamp": datetime.now().isoformat(),
-        "data_source": "solar_monitoring_system"
-    }
-    
-    # Remove None values to keep payload clean
-    return {k: v for k, v in telemetry_data.items() if v is not None}
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -716,8 +692,6 @@ def health_check():
         "telegram": telegram_status,
         "thingsboard": "configured" if THINGSBOARD_ACCESS_TOKEN != 'YOUR_DEVICE_ACCESS_TOKEN' else "not_configured"
     }), 200
-
-# ... (rest of your functions remain the same, including check_alerts, predictionalerts, etc.)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
