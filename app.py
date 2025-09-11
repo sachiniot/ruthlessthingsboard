@@ -258,7 +258,16 @@ def receive_esp32_data():
                 "light_intensity": light_intensity,
                 "energy": energy,
                 "frequency": frequency,
-                "nonessentialrelaystate":nonessentialrelaystate
+                "nonessentialrelaystate":nonessentialrelaystate,
+                "alert1":alert1,
+                "alert2":alert2,
+                "alert3":alert3,
+                "alert4":alert4,
+                "alert5":alert5,
+                "alert6":alert6,
+                "alert7":alert7,
+                "alert8":alert8,
+      
             }
             send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
         
@@ -279,6 +288,15 @@ def receive_esp32_data():
             response_data = {
                 "message": "Data received successfully",
                 "nonessentialrelaystate":nonessentialrelaystate,
+                "alert1":alert1,
+                "alert2":alert2,
+                "alert3":alert3,
+                "alert4":alert4,
+                "alert5":alert5,
+                "alert6":alert6,
+                "alert7":alert7,
+                "alert8":alert8,
+                
                 "status": "ok",
                 "weather_available": True,
                 "weather": {
@@ -541,7 +559,7 @@ def handle_alert():
 
 # Alert checking functions.....................................................................................................
 def check_alerts():
-    global alert1, alert2, alert3, alert4, alert5,nonessentialrelaystatus
+    global alert1, alert2, alert3, alert4, alert5,nonessentialrelaystate
     try:
         alert1 = None
         alert2 = None
