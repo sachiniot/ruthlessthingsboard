@@ -549,6 +549,7 @@ def check_alerts():
             alert1 = "Discharge!"
 
         # 2 Sun is sufficient but panel not produce power enough as it should be:
+        irradiance = light_intensity / 120   # conversion of lux to irradiance
         solar_power = (solar_voltage * solar_current) / 1000  # both should be global variables
 
         if irradiance in range(900, 1200):
@@ -582,7 +583,7 @@ def check_alerts():
             alert3 = "Overload!"
 
         # 4 sudden drop in sunlight:         
-        irradiance = light_intensity / 120   # conversion of lux to irradiance
+        
         current_light_intesity = irradiance
         lightslope = (current_light_intesity - prev_light_intesity) / timegap  # timegap is the time interval after which we will send and read data
         if light_slope < threshold_slope:
