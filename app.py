@@ -650,7 +650,7 @@ def check_alerts():
 #........................................................................................................................
 def predictionalerts():
     global alert6, alert7, alert8, nonessentialrelaystate
-    predicttotalenergy=random(0,4)
+    predicttotalenergy=random.uniform(0,4)
     try:
         alert6=alert7=alert8=None
         if averageenergyconsume > predicttotalenergy:
