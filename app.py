@@ -34,17 +34,21 @@ current_battery_percent = 0
 battery_percent_slope = 0
 threshold_battery_slope = 0.1  # Set appropriate threshold for battery charging rate
 inverter_rating = 500  # Set your inverter rating in watts
-predicttotalenergy = 0
-averageenergyconsume = 20 # in same interval in which total predict energy calculated calculated it like avg power of one day then avg power of this time-?
+last_alert_time = {}
+ALERT_COOLDOWN = 300  # 5 minutes in seconds
 
-alert1 = None
-alert2 = None
-alert3 = None
-alert4 = None
-alert5 = None
-alert6 = None
-alert7 = None
-alert8 = None
+
+averageenergyconsume=0  # in same interval in which total predict energy calculated calculated it like avg power of one day then avg power of this time-?
+predicttotalenergy=2
+alert1=None
+alert2=None
+alert3=None
+alert4=None
+alert5=None
+alert6=None
+alert7=None
+alert8=None
+
 
 # Weather data cache
 weather_cache = None
@@ -58,26 +62,13 @@ BAREILLY_LON = 79.4151
 # Open-Meteo API
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
-# Telegram token and id
+# Telegram token and id - FIXED: Use environment variables correctly
+# Telegram token and id - FIXED: Use environment variables correctly
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '8352010252:AAFxUDRp1ihGFQk_cu4ifQgQ8Yi4a_UVpDA')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '5625474222')
-
 # ThingsBoard Configuration
 THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.io')
 THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'Z1kBA2x2yG6R661ArK7E')
-
-# Panel specifications - UPDATE THESE WITH YOUR ACTUAL PANEL SPECS
-PANEL_VOLTAGE = 6
-PANEL_PEAK_POWER = 5  # Watts - YOU MUST SET THIS based on your actual panel
-PANEL_EFFICIENCY = 0.18  # Typical panel efficiency (18%)
-
-# Solar calculation constants
-SOLAR_NOON = 12.0  # The sun is strongest at 12:00
-DAYLIGHT_HALF_SPAN = 6.0  # 6 hours on each side of noon (6 AM to 6 PM)
-
-# Alert cooldown tracking
-last_alert_time = {}
-ALERT_COOLDOWN = 300  # 5 minutes in seconds
 
 @app.route('/')
 def home():
@@ -92,8 +83,7 @@ def home():
             "GET /test-params": "Check current parameter values",
             "POST /send-to-thingsboard": "Send data to ThingsBoard",
             "POST /resend-weather": "Resend weather data to ThingsBoard",
-            "POST /alert": "Send alert to Telegram",
-            "GET /energy-prediction": "Get solar energy production prediction"
+            "POST /alert": "Send alert to Telegram"
         },
         "thingsboard_config": {
             "host": THINGSBOARD_HOST,
@@ -207,71 +197,15 @@ def send_data_to_thingsboard():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-def predict_solar_energy(weather_data, panel_wattage):
-    """
-    Predict solar energy production based on weather data
-    Returns: predicted energy in Watt-hours for the next hour and next 12 hours
-    """
-    try:
-        hourly_forecast = weather_data.get('hourly_forecast', [])
-        if not hourly_forecast:
-            return 0, 0
-        
-        total_energy_12h = 0.0
-        next_hour_energy = 0.0
-        
-        for i, hour_data in enumerate(hourly_forecast):
-            hour_str = hour_data.get('time', '')
-            if not hour_str:
-                continue
-                
-            # Extract hour from timestamp (e.g., "2024-01-15T14:00" -> 14)
-            try:
-                hour_dt = datetime.fromisoformat(hour_str.replace('Z', '+00:00'))
-                hour_of_day = hour_dt.hour
-            except:
-                # Fallback: use current hour + index
-                hour_of_day = (datetime.now().hour + i) % 24
-            
-            cloud_cover = hour_data.get('cloud_cover', 50)  # Default to 50% if missing
-            
-            # 1. Calculate clear sky intensity for this hour
-            hour_from_noon = abs(hour_of_day - SOLAR_NOON)
-            if hour_from_noon > DAYLIGHT_HALF_SPAN:
-                clear_sky_intensity = 0.0
-            else:
-                scaled_factor = hour_from_noon / DAYLIGHT_HALF_SPAN
-                clear_sky_intensity = math.cos(scaled_factor * (math.pi / 2))
-            
-            # 2. Calculate the effect of clouds
-            irradiance_coefficient = 1 - (cloud_cover / 100.0)
-            
-            # 3. Calculate hourly power output
-            hourly_power_w = panel_wattage * clear_sky_intensity * irradiance_coefficient
-            
-            # 4. Calculate energy produced this hour (Watt-hours)
-            hourly_energy_wh = hourly_power_w * 1  # For 1 hour
-            
-            total_energy_12h += hourly_energy_wh
-            
-            # Store the first hour's energy as next hour prediction
-            if i == 0:
-                next_hour_energy = hourly_energy_wh
-        
-        return next_hour_energy, total_energy_12h
-        
-    except Exception as e:
-        print(f"❌ Error in energy prediction: {str(e)}")
-        return 0, 0
-
 @app.route('/esp32-data', methods=['POST'])
 def receive_esp32_data():
     global box_temp, frequency, power_factor, voltage, current, power, energy
     global solar_voltage, solar_current, solar_power, battery_percentage
     global light_intensity, battery_voltage, prev_light_intensity, current_light_intensity
-    global prev_battery_percent, current_battery_percent, predicttotalenergy
+    global prev_battery_percent, current_battery_percent
     
     print("📨 Received POST request to /esp32-data")
+    send_telegram_alert("📨 Received POST request to /esp32-data")
     
     try:
         data = request.get_json()
@@ -304,14 +238,8 @@ def receive_esp32_data():
         prev_light_intensity = current_light_intensity
         current_light_intensity = light_intensity if light_intensity else 0
         
-        # Get weather data and calculate energy predictions
-        weather_data = get_weather_data(force_refresh=False)
-        next_hour_energy, next_12h_energy = predict_solar_energy(weather_data, PANEL_PEAK_POWER)
-        predicttotalenergy = next_12h_energy
-        
         # Check for alerts
         check_alerts()
-        predictionalerts()
         
         # Send to ThingsBoard
         if any([box_temp, power, solar_power]):
@@ -324,11 +252,12 @@ def receive_esp32_data():
                 "current": current,
                 "light_intensity": light_intensity,
                 "energy": energy,
-                "frequency": frequency,
-                "predicted_energy_next_hour": next_hour_energy,
-                "predicted_energy_12h": next_12h_energy
+                "frequency": frequency
             }
             send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
+        
+        # Get current weather data to send back to ESP32
+        weather_data = get_weather_data(force_refresh=False)
         
         # FIXED: Handle case where weather data contains error
         if 'error' in weather_data:
@@ -337,12 +266,7 @@ def receive_esp32_data():
                 "message": "Data received successfully (weather data unavailable)", 
                 "status": "ok",
                 "weather_available": False,
-                "weather_error": weather_data['error'],
-                "energy_prediction": {
-                    "next_hour_wh": round(next_hour_energy, 2),
-                    "next_12h_wh": round(next_12h_energy, 2),
-                    "panel_wattage": PANEL_PEAK_POWER
-                }
+                "weather_error": weather_data['error']
             }
         else:
             # Return response with weather data
@@ -359,11 +283,6 @@ def receive_esp32_data():
                     "weather_code": weather_data['current'].get('weather_code'),
                     "feels_like": weather_data['current'].get('feels_like'),
                     "timestamp": weather_data['current'].get('timestamp')
-                },
-                "energy_prediction": {
-                    "next_hour_wh": round(next_hour_energy, 2),
-                    "next_12h_wh": round(next_12h_energy, 2),
-                    "panel_wattage": PANEL_PEAK_POWER
                 },
                 "location": {
                     "lat": BAREILLY_LAT,
@@ -397,12 +316,7 @@ def check_config():
     return jsonify({
         "telegram_bot_token_configured": TELEGRAM_BOT_TOKEN is not None,
         "telegram_chat_id_configured": TELEGRAM_CHAT_ID is not None,
-        "thingsboard_configured": THINGSBOARD_ACCESS_TOKEN != 'YOUR_DEVICE_ACCESS_TOKEN',
-        "panel_specs": {
-            "voltage": PANEL_VOLTAGE,
-            "peak_power": PANEL_PEAK_POWER,
-            "efficiency": PANEL_EFFICIENCY
-        }
+        "thingsboard_configured": THINGSBOARD_ACCESS_TOKEN != 'YOUR_DEVICE_ACCESS_TOKEN'
     })
 
 def get_weather_data(force_refresh=False):
@@ -554,31 +468,6 @@ def test_open_meteo():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
-@app.route('/energy-prediction', methods=['GET'])
-def energy_prediction():
-    """Get solar energy production prediction"""
-    try:
-        weather_data = get_weather_data(force_refresh=False)
-        next_hour_energy, next_12h_energy = predict_solar_energy(weather_data, PANEL_PEAK_POWER)
-        
-        return jsonify({
-            "success": True,
-            "predictions": {
-                "next_hour_wh": round(next_hour_energy, 2),
-                "next_12h_wh": round(next_12h_energy, 2),
-                "panel_specs": {
-                    "voltage": PANEL_VOLTAGE,
-                    "peak_power": PANEL_PEAK_POWER
-                }
-            },
-            "weather_used": {
-                "cloud_cover": weather_data['current'].get('cloud_cover') if 'current' in weather_data else None,
-                "timestamp": datetime.now().isoformat()
-            }
-        })
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
 # Telegram alert functions
 def send_telegram_alert(message, alert_type="general"):
     """Send alert message to Telegram bot"""
@@ -642,7 +531,7 @@ def handle_alert():
     except Exception as e:
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
-# Alert checking functions
+# Alert checking functions.....................................................................................................
 def check_alerts():
     global alert1, alert2, alert3, alert4, alert5
     try:
@@ -668,7 +557,7 @@ def check_alerts():
         irradiance = light_intensity / 120   # conversion of lux to irradiance
         solar_power = (solar_voltage * solar_current) / 1000  # both should be global variables
         
-        # Replace all the range checks with proper float comparisons:
+        # FIXED: Replace range() with proper float comparisons
         if 900 <= irradiance < 1200:
             if not (0.31 <= solar_power <= 0.37):
                 alert2 = "solar panel low efficiency!"
@@ -720,31 +609,31 @@ def check_alerts():
 
     except Exception as e:
         print(f"❌ Error in alert system: {str(e)}")
+#........................................................................................................................
 def predictionalerts():
-    global alert6, alert7, alert8
-    alert6=None
-    alert7=None
-    alert8=None
     try:
-        # For demo purposes, set average energy consumption to a fixed value
-        # In a real system, you would calculate this from historical data
-        global averageenergyconsume
-        averageenergyconsume = 20  # Example value in Watt-hours
-        
+        alert6=alert7=alert8=None
         if averageenergyconsume > predicttotalenergy:
-            alert6 = "Consumption is higher than expected solar generation!"
-            send_telegram_alert(alert6, "prediction")
+            # 6. send alert that consumption is higher than expected solar generation
+            alert6 = "consumption is higher than expected solar generation!"
         
-        if battery_percentage and battery_percentage < 40 and predicttotalenergy < averageenergyconsume:
-            alert7 = "Battery is low. Risk of blackout in future!"
-            send_telegram_alert(alert7, "prediction")
-            
-        if battery_percentage and battery_percentage > 80 and predicttotalenergy > averageenergyconsume * 2:
-            alert8 = "Battery may overcharge in next upcoming hours!"
-            send_telegram_alert(alert8, "prediction")
-            
+            if battery_percentage < 40:
+                # 7. send alert that Battery is low. Risk of blackout in future 
+                alert7 = "Battery is low. Risk of blackout in future!"
+                # take action to switch off relay of non essential load
+
+        if averageenergyconsume < predicttotalenergy:
+            # show that solar generation is sufficient as per your need
+            if battery_percentage > 40 and battery_percentage < 80:
+                # show that you can turn on non essential loads
+                pass
+
+            if battery_percentage > 80:
+                # 8. your battery may overcharge in next upcoming hours
+                alert8 = "Battery may overcharge in next upcoming hours!"
     except Exception as e:
         print(f"❌ Error in prediction alerts: {str(e)}")
+#.........................................................................................................................................
 
 @app.route('/health', methods=['GET'])
 def health_check():
