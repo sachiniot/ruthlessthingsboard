@@ -36,6 +36,7 @@ threshold_battery_slope = 0.1  # Set appropriate threshold for battery charging 
 inverter_rating = 500  # Set your inverter rating in watts
 last_alert_time = {}
 ALERT_COOLDOWN = 300  # 5 minutes in seconds
+nonessentialrelaystate=None
 
 
 averageenergyconsume=0  # in same interval in which total predict energy calculated calculated it like avg power of one day then avg power of this time-?
@@ -254,6 +255,7 @@ def receive_esp32_data():
                 "light_intensity": light_intensity,
                 "energy": energy,
                 "frequency": frequency
+                "nonessentialrelaystate":nonessentialrelaystate
             }
             send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
         
@@ -272,7 +274,8 @@ def receive_esp32_data():
         else:
             # Return response with weather data
             response_data = {
-                "message": "Data received successfully", 
+                "message": "Data received successfully",
+                "nonessentialrelaystate":nonessentialrelaystate
                 "status": "ok",
                 "weather_available": True,
                 "weather": {
@@ -549,10 +552,13 @@ def check_alerts():
 
         # 1 Alert for overcharge or discharge
         if current_battery_percent == 100:
+            
             alert1 = "Overcharge!"
+            nonessentialrelaystate=1
             send_telegram_alert(alert1, "battery")
         if current_battery_percent < 10:
             alert1 = "Discharge!"
+            nonessentialrelaystate=0
             send_telegram_alert(alert1, "battery")
 
         # 2 Sun is sufficient but panel not produce power enough as it should be:
@@ -563,33 +569,39 @@ def check_alerts():
         if 900 <= irradiance < 1200:
             if not (0.31 <= solar_power <= 0.37):
                 alert2 = "solar panel low efficiency!"
-                send_telegram_alert(alert2, "panel")
+                nonessentialrelaystate=0
+                send_telegram_alert(alert2, "panel alert")
 
         if 600 <= irradiance < 900:
             if not (0.22 <= solar_power <= 0.30):
                 alert2 = "solar panel low efficiency!"
-                send_telegram_alert(alert2, "panel")
+                nonessentialrelaystate=0
+                send_telegram_alert(alert2, "panel alert")
 
         if 350 <= irradiance < 600:
             if not (0.14 <= solar_power <= 0.22):
                 alert2 = "solar panel low efficiency!"
-                send_telegram_alert(alert2, "panel")
+                nonessentialrelaystate=0
+                send_telegram_alert(alert2, "panel alert")
 
         if 150 <= irradiance < 350:
             if not (0.05 <= solar_power <= 0.14):
                 alert2 = "solar panel low efficiency!"
-                send_telegram_alert(alert2, "panel")
+                nonessentialrelaystate=0
+                send_telegram_alert(alert2, "panel alert")
 
         if irradiance < 100:
             if not (0.0 <= solar_power <= 0.05):
                 alert2 = "solar panel low efficiency!"
-                send_telegram_alert(alert2, "panel")
+                nonessentialrelaystate=0
+                send_telegram_alert(alert2, "panel alert")
 
         # 3 overload conditions:
         if voltage is not None and current is not None:
             if (voltage * current / 1000) > inverter_rating:
                 alert3 = "Overload!"
-                send_telegram_alert(alert3, "load")
+                nonessentialrelaystate=0
+                send_telegram_alert(alert3, "load alert")
 
         # 4 sudden drop in sunlight:         
         if prev_light_intensity is not None:
@@ -599,7 +611,8 @@ def check_alerts():
             light_slope = (current_light_intensity - prev_light_intensity) / timegap
             if light_slope < threshold_slope:
                 alert4 = "Sudden drop in sun light!"
-                send_telegram_alert(alert4, "weather")
+                nonessentialrelaystate=0
+                send_telegram_alert(alert4, "light intensity alert")
 
         # 5 Solar generate power But battery not charge:
         if solar_power != 0 and prev_battery_percent is not None:  # solar produces power 
@@ -607,7 +620,8 @@ def check_alerts():
             battery_percent_slope = (current_battery_percent - prev_battery_percent) / timegap
             if battery_percent_slope < threshold_battery_slope:
                 alert5 = "Battery not charging!"
-                send_telegram_alert(alert5, "battery")
+                nonessentialrelaystate=0
+                send_telegram_alert(alert5, "battery alert")
 
     except Exception as e:
         print(f"❌ Error in alert system: {str(e)}")
@@ -618,21 +632,27 @@ def predictionalerts():
         if averageenergyconsume > predicttotalenergy:
             # 6. send alert that consumption is higher than expected solar generation
             alert6 = "consumption is higher than expected solar generation!"
+            send_telegram_alert("consumption is higher than expected solar generation!","prediction alert")
         
             if battery_percentage < 40:
                 # 7. send alert that Battery is low. Risk of blackout in future 
                 alert7 = "Battery is low. Risk of blackout in future!"
+                send_telegram_alert("Battery is low. Risk of blackout in future!","prediction alert")
                 # take action to switch off relay of non essential load
+                nonessentialrelaystate=0
 
         if averageenergyconsume < predicttotalenergy:
             # show that solar generation is sufficient as per your need
             if battery_percentage > 40 and battery_percentage < 80:
                 # show that you can turn on non essential loads
-                pass
+                nonessentialrelaystate=1
+                
 
             if battery_percentage > 80:
                 # 8. your battery may overcharge in next upcoming hours
                 alert8 = "Battery may overcharge in next upcoming hours!"
+                nonessentialrelaystate=1
+                send_telegram_alert("Battery may overcharge in next upcoming hours!","prediction alert")
     except Exception as e:
         print(f"❌ Error in prediction alerts: {str(e)}")
 #.........................................................................................................................................
