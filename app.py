@@ -35,7 +35,7 @@ battery_percent_slope = 0
 threshold_battery_slope = 0.1  # Set appropriate threshold for battery charging rate
 inverter_rating = 500  # Set your inverter rating in watts
 predicttotalenergy = 0
-averageenergyconsume = 0  # in same interval in which total predict energy calculated calculated it like avg power of one day then avg power of this time-?
+averageenergyconsume = 20 # in same interval in which total predict energy calculated calculated it like avg power of one day then avg power of this time-?
 
 alert1 = None
 alert2 = None
@@ -652,6 +652,10 @@ def check_alerts():
         alert4 = None
         alert5 = None
 
+        # Skip alert checks if critical data is missing
+        if current_battery_percent is None or light_intensity is None or solar_voltage is None or solar_current is None:
+            return
+
         # 1 Alert for overcharge or discharge
         if current_battery_percent == 100:
             alert1 = "Overcharge!"
@@ -663,49 +667,51 @@ def check_alerts():
         # 2 Sun is sufficient but panel not produce power enough as it should be:
         irradiance = light_intensity / 120   # conversion of lux to irradiance
         solar_power = (solar_voltage * solar_current) / 1000  # both should be global variables
-
-        if irradiance in range(900, 1200):
-            if solar_power not in range(0.31, 0.37):
+        
+        # Replace all the range checks with proper float comparisons:
+        if 900 <= irradiance < 1200:
+            if not (0.31 <= solar_power <= 0.37):
                 alert2 = "solar panel low efficiency!"
                 send_telegram_alert(alert2, "panel")
 
-        if irradiance in range(600, 900):
-            if solar_power not in range(0.22, 0.30):
+        if 600 <= irradiance < 900:
+            if not (0.22 <= solar_power <= 0.30):
                 alert2 = "solar panel low efficiency!"
                 send_telegram_alert(alert2, "panel")
 
-        if irradiance in range(350, 600):
-            if solar_power not in range(0.14, 0.22):
+        if 350 <= irradiance < 600:
+            if not (0.14 <= solar_power <= 0.22):
                 alert2 = "solar panel low efficiency!"
                 send_telegram_alert(alert2, "panel")
 
-        if irradiance in range(150, 350):
-            if solar_power not in range(0.05, 0.14):
+        if 150 <= irradiance < 350:
+            if not (0.05 <= solar_power <= 0.14):
                 alert2 = "solar panel low efficiency!"
                 send_telegram_alert(alert2, "panel")
 
         if irradiance < 100:
-            if solar_power not in range(0.0, 0.05):
+            if not (0.0 <= solar_power <= 0.05):
                 alert2 = "solar panel low efficiency!"
                 send_telegram_alert(alert2, "panel")
 
         # 3 overload conditions:
-        if (voltage * current / 1000) > inverter_rating:
-            alert3 = "Overload!"
-            send_telegram_alert(alert3, "load")
+        if voltage is not None and current is not None:
+            if (voltage * current / 1000) > inverter_rating:
+                alert3 = "Overload!"
+                send_telegram_alert(alert3, "load")
 
         # 4 sudden drop in sunlight:         
-        
-        current_light_intesity = irradiance
-        # Assuming timegap is 5 minutes (300 seconds) between readings
-        timegap = 300
-        light_slope = (current_light_intesity - prev_light_intensity) / timegap
-        if light_slope < threshold_slope:
-            alert4 = "Sudden drop in sun light!"
-            send_telegram_alert(alert4, "weather")
+        if prev_light_intensity is not None:
+            current_light_intesity = irradiance
+            # Assuming timegap is 5 minutes (300 seconds) between readings
+            timegap = 300
+            light_slope = (current_light_intesity - prev_light_intensity) / timegap
+            if light_slope < threshold_slope:
+                alert4 = "Sudden drop in sun light!"
+                send_telegram_alert(alert4, "weather")
 
         # 5 Solar generate power But battery not charge:
-        if solar_power != 0:  # solar produces power 
+        if solar_power != 0 and prev_battery_percent is not None:  # solar produces power 
             timegap = 300  # 5 minutes in seconds
             battery_percent_slope = (current_battery_percent - prev_battery_percent) / timegap
             if battery_percent_slope < threshold_battery_slope:
@@ -714,9 +720,11 @@ def check_alerts():
 
     except Exception as e:
         print(f"❌ Error in alert system: {str(e)}")
-
 def predictionalerts():
     global alert6, alert7, alert8
+    alert6=None
+    alert7=None
+    alert8=None
     try:
         # For demo purposes, set average energy consumption to a fixed value
         # In a real system, you would calculate this from historical data
