@@ -205,7 +205,7 @@ def receive_esp32_data():
     global box_temp, frequency, power_factor, voltage, current, power, energy
     global solar_voltage, solar_current, solar_power, battery_percentage
     global light_intensity, battery_voltage, prev_light_intensity, current_light_intensity
-    global prev_battery_percent, current_battery_percent
+    global prev_battery_percent, current_battery_percent,nonessentialrelaystate
     
     print("📨 Received POST request to /esp32-data")
     
@@ -241,6 +241,9 @@ def receive_esp32_data():
         
         prev_light_intensity = current_light_intensity
         current_light_intensity = light_intensity if light_intensity else 0
+
+        check_alerts()
+        predictionalerts()
         
        
         # Send to ThingsBoard
@@ -254,7 +257,7 @@ def receive_esp32_data():
                 "current": current,
                 "light_intensity": light_intensity,
                 "energy": energy,
-                "frequency": frequency
+                "frequency": frequency,
                 "nonessentialrelaystate":nonessentialrelaystate
             }
             send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
@@ -275,7 +278,7 @@ def receive_esp32_data():
             # Return response with weather data
             response_data = {
                 "message": "Data received successfully",
-                "nonessentialrelaystate":nonessentialrelaystate
+                "nonessentialrelaystate":nonessentialrelaystate,
                 "status": "ok",
                 "weather_available": True,
                 "weather": {
