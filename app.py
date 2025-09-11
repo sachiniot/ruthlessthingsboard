@@ -36,10 +36,10 @@ threshold_battery_slope = 0.1  # Set appropriate threshold for battery charging 
 inverter_rating = 500  # Set your inverter rating in watts
 last_alert_time = {}
 ALERT_COOLDOWN = 300  # 5 minutes in seconds
-nonessentialrelaystate=None
+nonessentialrelaystate=1
 
 
-averageenergyconsume=0  # in same interval in which total predict energy calculated calculated it like avg power of one day then avg power of this time-?
+averageenergyconsume=0.7  # in same interval in which total predict energy calculated calculated it like avg power of one day then avg power of this time-?
 predicttotalenergy=2
 alert1=None
 alert2=None
@@ -541,7 +541,7 @@ def handle_alert():
 
 # Alert checking functions.....................................................................................................
 def check_alerts():
-    global alert1, alert2, alert3, alert4, alert5
+    global alert1, alert2, alert3, alert4, alert5,nonessentialrelaystatus
     try:
         alert1 = None
         alert2 = None
@@ -630,6 +630,7 @@ def check_alerts():
         print(f"❌ Error in alert system: {str(e)}")
 #........................................................................................................................
 def predictionalerts():
+    global alert6, alert7, alert8, nonessentialrelaystate
     try:
         alert6=alert7=alert8=None
         if averageenergyconsume > predicttotalenergy:
