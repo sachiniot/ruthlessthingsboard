@@ -810,7 +810,7 @@ def check_alerts():
     except Exception as e:
         print(f"❌ Error in alert system: {str(e)}")
 
-..............................................
+#..................................................................................................................................
 def predictionalerts():
     global alert6, alert7, alert8, nonessentialrelaystate
     predicttotalenergy=random.random()*4
@@ -822,7 +822,7 @@ def predictionalerts():
             send_telegram_alert("consumption is higher than expected solar generation!","prediction alert")
         
             if battery_percentage < 40:
-                # 7. send alert that Battery is low. Risk of blackout in future 
+                # 7. send alert that Battery is low. Risk of blackout in future ..
                 alert7 = "Battery is low. Risk of blackout in future!"
                 send_telegram_alert("Battery is low. Risk of blackout in future!","prediction alert")
                 # take action to switch off relay of non essential load
