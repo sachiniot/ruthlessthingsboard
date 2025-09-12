@@ -39,7 +39,6 @@ last_alert_time = {}
 ALERT_COOLDOWN = 300  # 5 minutes in seconds
 nonessentialrelaystate=1
 
-
 averageenergyconsume=2.5  # in same interval in which total predict energy calculated calculated it like avg power of one day then avg power of this time-?
 predicttotalenergy=0
 alert1=None
@@ -50,7 +49,6 @@ alert5=None
 alert6=None
 alert7=None
 alert8=None
-
 
 # Weather data cache
 weather_cache = None
@@ -64,14 +62,13 @@ BAREILLY_LON = 79.4151
 # Open-Meteo API
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
-
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '8352010252:AAFxUDRp1ihGFQk_cu4ifQgQ8Yi4a_UVpDA')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '5625474222')
 # ThingsBoard Configuration
 THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.io')
 THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'GudRzRG8OWWm7YhUCziK')
 APP_URL = os.environ.get('APP_URL', 'https://energy-vison.vercel.app/')  
-API_ENDPOINT = os.environ.get('API_ENDPOINT', 'https://energy-vison.vercel.app/api/dashboard-data ')     
+API_ENDPOINT = os.environ.get('API_ENDPOINT', '/api/dashboard-data')     
 
 @app.route('/')
 def home():
@@ -87,7 +84,7 @@ def home():
             "POST /send-to-thingsboard": "Send data to ThingsBoard",
             "POST /resend-weather": "Resend weather data to ThingsBoard",
             "POST /alert": "Send alert to Telegram",
-            "POST /send-all-data-to-app": "Send all global variables and weather data to external app"  # NEW
+            "POST /send-all-data-to-app": "Send all global variables and weather data to external app"
         },
         "thingsboard_config": {
             "host": THINGSBOARD_HOST,
@@ -209,15 +206,14 @@ def receive_esp32_data():
     global box_temp, frequency, power_factor, voltage, current, power, energy
     global solar_voltage, solar_current, solar_power, battery_percentage
     global light_intensity, battery_voltage, prev_light_intensity, current_light_intensity
-    global prev_battery_percent, current_battery_percent,nonessentialrelaystate
+    global prev_battery_percent, current_battery_percent, nonessentialrelaystate
     
     print("📨 Received POST request to /esp32-data")
-    
     
     try:
         data = request.get_json()
         if not data:
-            send_telegram_alert("No JSON data recieved","data error")
+            send_telegram_alert("No JSON data received", "data error")
             return jsonify({"error": "No JSON data received"}), 400
         
         print(f"✅ JSON data received: {data}")
@@ -249,38 +245,104 @@ def receive_esp32_data():
         check_alerts()
         predictionalerts()
         
-       
         # Send to ThingsBoard
         if any([box_temp, power, solar_power]):
             telemetry_data = {
-                
                 "power": power,
                 "solar_power": solar_power,
                 "battery_percentage": battery_percentage,
                 "voltage": voltage,
                 "current": current,
-                "solar_voltage":solar_voltage,
-                "solar_current":solar_current,
+                "solar_voltage": solar_voltage,
+                "solar_current": solar_current,
                 "light_intensity": light_intensity,
                 "energy": energy,
                 "frequency": frequency,
-                "nonessentialrelaystate":nonessentialrelaystate,
-                "alert1":alert1,
-                "alert2":alert2,
-                "alert3":alert3,
-                "alert4":alert4,
-                "alert5":alert5,
-                "alert6":alert6,
-                "alert7":alert7,
-                "alert8":alert8,
-      
+                "nonessentialrelaystate": nonessentialrelaystate,
+                "alert1": alert1,
+                "alert2": alert2,
+                "alert3": alert3,
+                "alert4": alert4,
+                "alert5": alert5,
+                "alert6": alert6,
+                "alert7": alert7,
+                "alert8": alert8,
             }
             send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
+            
+            # ⭐⭐⭐ AUTO-FORWARD TO DASHBOARD APP ⭐⭐⭐
+            try:
+                # Get weather data
+                weather_data = get_weather_data(force_refresh=False)
+                
+                # Prepare all data to send
+                all_data = {
+                    # ESP32 data variables
+                    "box_temp": box_temp,
+                    "frequency": frequency,
+                    "power_factor": power_factor,
+                    "voltage": voltage,
+                    "current": current,
+                    "power": power,
+                    "energy": energy,
+                    "solar_voltage": solar_voltage,
+                    "solar_current": solar_current,
+                    "solar_power": solar_power,
+                    "battery_percentage": battery_percentage,
+                    "light_intensity": light_intensity,
+                    "battery_voltage": battery_voltage,
+                    
+                    # Alert system variables
+                    "prev_light_intensity": prev_light_intensity,
+                    "current_light_intensity": current_light_intensity,
+                    "light_slope": light_slope,
+                    "threshold_slope": threshold_slope,
+                    "irradiance": irradiance,
+                    "prev_battery_percent": prev_battery_percent,
+                    "current_battery_percent": current_battery_percent,
+                    "battery_percent_slope": battery_percent_slope,
+                    "threshold_battery_slope": threshold_battery_slope,
+                    "inverter_rating": inverter_rating,
+                    "nonessentialrelaystate": nonessentialrelaystate,
+                    
+                    # Prediction and alert variables
+                    "averageenergyconsume": averageenergyconsume,
+                    "predicttotalenergy": predicttotalenergy,
+                    "alert1": alert1,
+                    "alert2": alert2,
+                    "alert3": alert3,
+                    "alert4": alert4,
+                    "alert5": alert5,
+                    "alert6": alert6,
+                    "alert7": alert7,
+                    "alert8": alert8,
+                    
+                    # Weather data
+                    "weather_data": weather_data if not weather_data.get('error') else {"error": weather_data.get('error')},
+                    
+                    # Metadata
+                    "server_timestamp": datetime.now().isoformat(),
+                    "location": {"lat": BAREILLY_LAT, "lon": BAREILLY_LON, "name": "Bareilly, India"}
+                }
+                
+                # Send to your dashboard app
+                dashboard_url = "https://energy-vison.vercel.app/api/dashboard-data"
+                headers = {'Content-Type': 'application/json'}
+                response = requests.post(dashboard_url, json=all_data, headers=headers, timeout=10)
+                
+                if response.status_code >= 200 and response.status_code < 300:
+                    print("✅ Auto-forwarded to dashboard successfully")
+                else:
+                    print(f"❌ Auto-forward failed: Status {response.status_code}, Response: {response.text}")
+                    
+            except Exception as e:
+                print(f"❌ Auto-forward error: {str(e)}")
+            # ⭐⭐⭐ END AUTO-FORWARD ⭐⭐⭐
         
         # Get current weather data to send back to ESP32
         weather_data = get_weather_data(force_refresh=False)
         
-        # FIXED: Handle case where weather data contains error
+        # Handle case where weather data contains error
         if 'error' in weather_data:
             # Return basic success response without weather data
             response_data = {
@@ -293,16 +355,15 @@ def receive_esp32_data():
             # Return response with weather data
             response_data = {
                 "message": "Data received successfully",
-                "nonessentialrelaystate":nonessentialrelaystate,
-                "alert1":alert1,
-                "alert2":alert2,
-                "alert3":alert3,
-                "alert4":alert4,
-                "alert5":alert5,
-                "alert6":alert6,
-                "alert7":alert7,
-                "alert8":alert8,
-                
+                "nonessentialrelaystate": nonessentialrelaystate,
+                "alert1": alert1,
+                "alert2": alert2,
+                "alert3": alert3,
+                "alert4": alert4,
+                "alert5": alert5,
+                "alert6": alert6,
+                "alert7": alert7,
+                "alert8": alert8,
                 "status": "ok",
                 "weather_available": True,
                 "weather": {
@@ -517,7 +578,6 @@ def send_telegram_alert(message, alert_type="general"):
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     
-   
     formatted_message = f"🚨 <b>Solar Monitor Alert</b> 🚨\n\n{message}\n\n<i>Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</i>"
     
     payload = {
@@ -543,7 +603,6 @@ def send_telegram_alert(message, alert_type="general"):
 def handle_alert():
     """Endpoint to receive alerts and forward to Telegram"""
     try:
-        
         data = request.get_json()
         
         if not data or 'message' not in data:
@@ -570,8 +629,8 @@ def send_all_data_to_app():
     try:
         # Get the target URL from the request or use a default
         data = request.get_json() or {}
-        target_url = data.get('url')
-        endpoint = data.get('endpoint', '/api/data')
+        target_url = data.get('url', 'https://energy-vison.vercel.app')
+        endpoint = data.get('endpoint', '/api/dashboard-data')
         
         if not target_url:
             return jsonify({
@@ -663,9 +722,9 @@ def send_all_data_to_app():
         print(f"❌ {error_msg}")
         return jsonify({"success": False, "error": error_msg}), 500
 
-# Alert checking functions.....................................................................................................
+# Alert checking functions
 def check_alerts():
-    global alert1, alert2, alert3, alert4, alert5,nonessentialrelaystate
+    global alert1, alert2, alert3, alert4, alert5, nonessentialrelaystate
     try:
         alert1 = None
         alert2 = None
@@ -679,7 +738,6 @@ def check_alerts():
 
         # 1 Alert for overcharge or discharge
         if current_battery_percent == 100:
-            
             alert1 = "Overcharge!"
             nonessentialrelaystate=1
             send_telegram_alert(alert1, "battery")
@@ -692,7 +750,6 @@ def check_alerts():
         irradiance = light_intensity / 120   # conversion of lux to irradiance
         solar_power = (solar_voltage * solar_current) / 1000  # both should be global variables
         
-        # FIXED: Replace range() with proper float comparisons
         if 900 <= irradiance < 1200:
             if not (0.31 <= solar_power <= 0.37):
                 alert2 = "solar panel low efficiency!"
@@ -752,7 +809,8 @@ def check_alerts():
 
     except Exception as e:
         print(f"❌ Error in alert system: {str(e)}")
-#........................................................................................................................
+
+..............................................
 def predictionalerts():
     global alert6, alert7, alert8, nonessentialrelaystate
     predicttotalenergy=random.random()*4
