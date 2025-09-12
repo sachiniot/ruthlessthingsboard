@@ -70,6 +70,8 @@ TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '5625474222')
 # ThingsBoard Configuration
 THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.io')
 THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'GudRzRG8OWWm7YhUCziK')
+APP_URL = os.environ.get('APP_URL', 'https://energy-vison.vercel.app/')  
+API_ENDPOINT = os.environ.get('API_ENDPOINT', 'https://energy-vison.vercel.app/api/dashboard-data ')     
 
 @app.route('/')
 def home():
@@ -84,7 +86,8 @@ def home():
             "GET /test-params": "Check current parameter values",
             "POST /send-to-thingsboard": "Send data to ThingsBoard",
             "POST /resend-weather": "Resend weather data to ThingsBoard",
-            "POST /alert": "Send alert to Telegram"
+            "POST /alert": "Send alert to Telegram",
+            "POST /send-all-data-to-app": "Send all global variables and weather data to external app"  # NEW
         },
         "thingsboard_config": {
             "host": THINGSBOARD_HOST,
@@ -434,7 +437,7 @@ def get_weather_data(force_refresh=False):
         return weather_data
         
     except Exception as e:
-        error_msg = f"Weather API error: {str(e)}"
+        error_msg = f"Weater API error: {str(e)}"
         send_telegram_alert("Weather API error","api error")
         print(f"❌ {error_msg}")
         return {'error': error_msg}
@@ -559,6 +562,106 @@ def handle_alert():
         
     except Exception as e:
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+# NEW ENDPOINT: Send all global variables and weather data to external app
+@app.route('/send-all-data-to-app', methods=['POST'])
+def send_all_data_to_app():
+    """Send all global variables AND weather data as JSON to external app via POST request"""
+    try:
+        # Get the target URL from the request or use a default
+        data = request.get_json() or {}
+        target_url = data.get('url')
+        endpoint = data.get('endpoint', '/api/data')
+        
+        if not target_url:
+            return jsonify({
+                "success": False, 
+                "error": "No target URL provided. Please include 'url' in your request body"
+            }), 400
+        
+        # Build the complete URL
+        full_url = f"{target_url.rstrip('/')}/{endpoint.lstrip('/')}"
+        
+        # Get current weather data
+        weather_data = get_weather_data(force_refresh=False)
+        
+        # Prepare all global variables as a dictionary
+        all_data = {
+            # ESP32 data variables
+            "box_temp": box_temp,
+            "frequency": frequency,
+            "power_factor": power_factor,
+            "voltage": voltage,
+            "current": current,
+            "power": power,
+            "energy": energy,
+            "solar_voltage": solar_voltage,
+            "solar_current": solar_current,
+            "solar_power": solar_power,
+            "battery_percentage": battery_percentage,
+            "light_intensity": light_intensity,
+            "battery_voltage": battery_voltage,
+            
+            # Alert system variables
+            "prev_light_intensity": prev_light_intensity,
+            "current_light_intensity": current_light_intensity,
+            "light_slope": light_slope,
+            "threshold_slope": threshold_slope,
+            "irradiance": irradiance,
+            "prev_battery_percent": prev_battery_percent,
+            "current_battery_percent": current_battery_percent,
+            "battery_percent_slope": battery_percent_slope,
+            "threshold_battery_slope": threshold_battery_slope,
+            "inverter_rating": inverter_rating,
+            "nonessentialrelaystate": nonessentialrelaystate,
+            
+            # Prediction and alert variables
+            "averageenergyconsume": averageenergyconsume,
+            "predicttotalenergy": predicttotalenergy,
+            "alert1": alert1,
+            "alert2": alert2,
+            "alert3": alert3,
+            "alert4": alert4,
+            "alert5": alert5,
+            "alert6": alert6,
+            "alert7": alert7,
+            "alert8": alert8,
+            
+            # Weather data
+            "weather_data": weather_data if not weather_data.get('error') else {"error": weather_data.get('error')},
+            
+            # Metadata
+            "server_timestamp": datetime.now().isoformat(),
+            "location": {"lat": BAREILLY_LAT, "lon": BAREILLY_LON, "name": "Bareilly, India"}
+        }
+        
+        # Send the data via POST request
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(full_url, json=all_data, headers=headers, timeout=10)
+        
+        # Check if the request was successful
+        if response.status_code >= 200 and response.status_code < 300:
+            return jsonify({
+                "success": True,
+                "message": f"Data sent successfully to {full_url}",
+                "status_code": response.status_code,
+                "response": response.text
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": f"Failed to send data. Status code: {response.status_code}",
+                "response": response.text
+            }), 500
+            
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Request error: {str(e)}"
+        print(f"❌ {error_msg}")
+        return jsonify({"success": False, "error": error_msg}), 500
+    except Exception as e:
+        error_msg = f"Internal server error: {str(e)}"
+        print(f"❌ {error_msg}")
+        return jsonify({"success": False, "error": error_msg}), 500
 
 # Alert checking functions.....................................................................................................
 def check_alerts():
