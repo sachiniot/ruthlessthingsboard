@@ -68,7 +68,7 @@ TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '5625474222')
 THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.io')
 THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'GudRzRG8OWWm7YhUCziK')
 APP_URL = os.environ.get('APP_URL', 'https://energy-vison.vercel.app/')  
-API_ENDPOINT = os.environ.get('API_ENDPOINT', '/api/dashboard-data')     
+API_ENDPOINT = os.environ.get('API_ENDPOINT', 'https://energy-vison.vercel.app/api/dashboard-data')     
 
 @app.route('/')
 def home():
