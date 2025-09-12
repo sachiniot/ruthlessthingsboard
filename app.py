@@ -331,8 +331,7 @@ def receive_esp32_data():
                
                 print(f"📤 SENDING TO EXTERNAL APP:")
                 print(f"📤 URL: {dashboard_url}")
-                print(f"📤 JSON DATA: {json.dumps(all_data, indent=2)}")
-                print(f"📤 TIMESTAMP: {datetime.now().isoformat()}")
+                
                 headers = {'Content-Type': 'application/json'}
                 response = requests.post(dashboard_url, json=all_data, headers=headers, timeout=10)
                 
