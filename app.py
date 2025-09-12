@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from datetime import datetime, timedelta
 import requests
 import random
+import json  
 import math
 import os
 from flask_cors import CORS  
@@ -327,6 +328,11 @@ def receive_esp32_data():
                 
                 # Send to your dashboard app
                 dashboard_url = "https://energy-vison.vercel.app/api/dashboard-data"
+               
+                print(f"📤 SENDING TO EXTERNAL APP:")
+                print(f"📤 URL: {dashboard_url}")
+                print(f"📤 JSON DATA: {json.dumps(all_data, indent=2)}")
+                print(f"📤 TIMESTAMP: {datetime.now().isoformat()}")
                 headers = {'Content-Type': 'application/json'}
                 response = requests.post(dashboard_url, json=all_data, headers=headers, timeout=10)
                 
