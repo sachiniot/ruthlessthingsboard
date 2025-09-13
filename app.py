@@ -182,8 +182,10 @@ def send_all_data_to_thingsboard():
         weather_data = get_weather_data(force_refresh=False)
         
         # Prepare all telemetry data in a single dictionary
-        telemetry_data = {
-            # ESP32 data
+        telemetry_data = {}
+        
+        # ESP32 data
+        telemetry_data.update({
             "power": float(power) if power is not None else None,
             "solar_power": float(solar_power) if solar_power is not None else None,
             "battery_percentage": float(battery_percentage) if battery_percentage is not None else None,
@@ -198,18 +200,23 @@ def send_all_data_to_thingsboard():
             "power_factor": float(power_factor) if power_factor is not None else None,
             "battery_voltage": float(battery_voltage) if battery_voltage is not None else None,
             "nonessentialrelaystate": int(nonessentialrelaystate) if nonessentialrelaystate is not None else None,
-            
-            # Weather data
-            "temperature": float(weather_data['current'].get('temperature')) if weather_data and not weather_data.get('error') and weather_data['current'].get('temperature') is not None else None,
-            "humidity": float(weather_data['current'].get('humidity')) if weather_data and not weather_data.get('error') and weather_data['current'].get('humidity') is not None else None,
-            "cloud_cover": float(weather_data['current'].get('cloud_cover')) if weather_data and not weather_data.get('error') and weather_data['current'].get('cloud_cover') is not None else None,
-            "wind_speed": float(weather_data['current'].get('wind_speed')) if weather_data and not weather_data.get('error') and weather_data['current'].get('wind_speed') is not None else None,
-            "precipitation": float(weather_data['current'].get('precipitation')) if weather_data and not weather_data.get('error') and weather_data['current'].get('precipitation') is not None else None,
-            "weather_code": int(weather_data['current'].get('weather_code')) if weather_data and not weather_data.get('error') and weather_data['current'].get('weather_code') is not None else None,
-            "location_lat": float(BAREILLY_LAT),
-            "location_lon": float(BAREILLY_LON),
-            
-            # Alert data
+        })
+        
+        # Weather data
+        if not weather_data.get('error'):
+            telemetry_data.update({
+                "temperature": float(weather_data['current'].get('temperature')) if weather_data['current'].get('temperature') is not None else None,
+                "humidity": float(weather_data['current'].get('humidity')) if weather_data['current'].get('humidity') is not None else None,
+                "cloud_cover": float(weather_data['current'].get('cloud_cover')) if weather_data['current'].get('cloud_cover') is not None else None,
+                "wind_speed": float(weather_data['current'].get('wind_speed')) if weather_data['current'].get('wind_speed') is not None else None,
+                "precipitation": float(weather_data['current'].get('precipitation')) if weather_data['current'].get('precipitation') is not None else None,
+                "weather_code": int(weather_data['current'].get('weather_code')) if weather_data['current'].get('weather_code') is not None else None,
+                "location_lat": float(BAREILLY_LAT),
+                "location_lon": float(BAREILLY_LON),
+            })
+        
+        # Alert data
+        telemetry_data.update({
             "alert1": str(alert1) if alert1 is not None else "No alert",
             "alert2": str(alert2) if alert2 is not None else "No alert",
             "alert3": str(alert3) if alert3 is not None else "No alert",
@@ -218,11 +225,13 @@ def send_all_data_to_thingsboard():
             "alert6": str(alert6) if alert6 is not None else "No alert",
             "alert7": str(alert7) if alert7 is not None else "No alert",
             "alert8": str(alert8) if alert8 is not None else "No alert",
-            
-            # Prediction data
+        })
+        
+        # Prediction data
+        telemetry_data.update({
             "averageenergyconsume": float(averageenergyconsume) if averageenergyconsume is not None else None,
             "predicttotalenergy": float(predicttotalenergy) if predicttotalenergy is not None else None,
-        }
+        })
         
         # Filter out None values
         filtered_telemetry = {k: v for k, v in telemetry_data.items() if v is not None}
