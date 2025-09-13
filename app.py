@@ -181,9 +181,9 @@ def send_all_data_to_thingsboard():
         # Get weather data
         weather_data = get_weather_data(force_refresh=False)
         
-        # Prepare telemetry data - start with basic known good fields
+        # Prepare all telemetry data in a single dictionary
         telemetry_data = {
-            # Basic ESP32 data that we know works
+            # ESP32 data
             "power": float(power) if power is not None else None,
             "solar_power": float(solar_power) if solar_power is not None else None,
             "battery_percentage": float(battery_percentage) if battery_percentage is not None else None,
@@ -192,58 +192,47 @@ def send_all_data_to_thingsboard():
             "light_intensity": float(light_intensity) if light_intensity is not None else None,
             "energy": float(energy) if energy is not None else None,
             "box_temp": float(box_temp) if box_temp is not None else None,
-        }
-        
-        # Add additional fields that might be problematic with careful handling
-        additional_fields = {
             "solar_voltage": float(solar_voltage) if solar_voltage is not None else None,
             "solar_current": float(solar_current) if solar_current is not None else None,
             "frequency": float(frequency) if frequency is not None else None,
             "power_factor": float(power_factor) if power_factor is not None else None,
             "battery_voltage": float(battery_voltage) if battery_voltage is not None else None,
             "nonessentialrelaystate": int(nonessentialrelaystate) if nonessentialrelaystate is not None else None,
-        }
-        
-        # Add weather data with careful handling
-        if not weather_data.get('error'):
-            weather_fields = {
-                "temperature": float(weather_data['current'].get('temperature')) if weather_data['current'].get('temperature') is not None else None,
-                "humidity": float(weather_data['current'].get('humidity')) if weather_data['current'].get('humidity') is not None else None,
-                "cloud_cover": float(weather_data['current'].get('cloud_cover')) if weather_data['current'].get('cloud_cover') is not None else None,
-                "wind_speed": float(weather_data['current'].get('wind_speed')) if weather_data['current'].get('wind_speed') is not None else None,
-                "precipitation": float(weather_data['current'].get('precipitation')) if weather_data['current'].get('precipitation') is not None else None,
-                "weather_code": int(weather_data['current'].get('weather_code')) if weather_data['current'].get('weather_code') is not None else None,
-            }
-            telemetry_data.update(weather_fields)
-        
-        # Add location data
-        telemetry_data.update({
+            
+            # Weather data
+            "temperature": float(weather_data['current'].get('temperature')) if weather_data and not weather_data.get('error') and weather_data['current'].get('temperature') is not None else None,
+            "humidity": float(weather_data['current'].get('humidity')) if weather_data and not weather_data.get('error') and weather_data['current'].get('humidity') is not None else None,
+            "cloud_cover": float(weather_data['current'].get('cloud_cover')) if weather_data and not weather_data.get('error') and weather_data['current'].get('cloud_cover') is not None else None,
+            "wind_speed": float(weather_data['current'].get('wind_speed')) if weather_data and not weather_data.get('error') and weather_data['current'].get('wind_speed') is not None else None,
+            "precipitation": float(weather_data['current'].get('precipitation')) if weather_data and not weather_data.get('error') and weather_data['current'].get('precipitation') is not None else None,
+            "weather_code": int(weather_data['current'].get('weather_code')) if weather_data and not weather_data.get('error') and weather_data['current'].get('weather_code') is not None else None,
             "location_lat": float(BAREILLY_LAT),
             "location_lon": float(BAREILLY_LON),
-        })
-        
-        # Add alert fields as strings (they might contain special characters)
-        alert_fields = {
-            "alert1": str(alert1) if alert1 is not None else None,
-            "alert2": str(alert2) if alert2 is not None else None,
-            "alert3": str(alert3) if alert3 is not None else None,
-            "alert4": str(alert4) if alert4 is not None else None,
-            "alert5": str(alert5) if alert5 is not None else None,
-            "alert6": str(alert6) if alert6 is not None else None,
-            "alert7": str(alert7) if alert7 is not None else None,
-            "alert8": str(alert8) if alert8 is not None else None,
+            
+            # Alert data
+            "alert1": str(alert1) if alert1 is not None else "No alert",
+            "alert2": str(alert2) if alert2 is not None else "No alert",
+            "alert3": str(alert3) if alert3 is not None else "No alert",
+            "alert4": str(alert4) if alert4 is not None else "No alert",
+            "alert5": str(alert5) if alert5 is not None else "No alert",
+            "alert6": str(alert6) if alert6 is not None else "No alert",
+            "alert7": str(alert7) if alert7 is not None else "No alert",
+            "alert8": str(alert8) if alert8 is not None else "No alert",
+            
+            # Prediction data
+            "averageenergyconsume": float(averageenergyconsume) if averageenergyconsume is not None else None,
+            "predicttotalenergy": float(predicttotalenergy) if predicttotalenergy is not None else None,
         }
-        telemetry_data.update(alert_fields)
         
         # Filter out None values
         filtered_telemetry = {k: v for k, v in telemetry_data.items() if v is not None}
         
-        print(f"📊 Prepared data for ThingsBoard: {json.dumps(filtered_telemetry, indent=2)}")
+        print(f"📊 Prepared ALL data for ThingsBoard: {json.dumps(filtered_telemetry, indent=2)}")
         
         # Send to ThingsBoard
         success = send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, filtered_telemetry)
         
-        # If it fails, try with just the basic fields
+        # If it fails, try sending just the basic fields
         if not success:
             print("🔄 Full data failed, trying basic data only")
             basic_data = {
