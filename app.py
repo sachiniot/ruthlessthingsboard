@@ -67,7 +67,7 @@ TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '8352010252:AAFxUDRp1i
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '5625474222')
 # ThingsBoard Configuration
 THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.io')
-THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'GudRzRG8OWWm7YhUCziK')
+THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'SKXA7Q19fcvLoevrFdJz')
 APP_URL = os.environ.get('APP_URL', 'https://energy-vison.vercel.app')  
 API_ENDPOINT = os.environ.get('API_ENDPOINT', 'https://energy-vison.vercel.app/api/dashboard-data')     
 
