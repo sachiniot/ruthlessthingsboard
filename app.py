@@ -106,15 +106,62 @@ def send_to_thingsboard(device_token, telemetry_data):
             return False
             
         url = f"{THINGSBOARD_HOST}/api/v1/{device_token}/telemetry"
+        
+        # Clean the telemetry data to ensure all values are valid JSON types
+        cleaned_telemetry = {}
+        for key, value in telemetry_data.items():
+            if value is not None:
+                # Convert any non-standard types to strings or numbers
+                if isinstance(value, (int, float, str, bool)):
+                    cleaned_telemetry[key] = value
+                else:
+                    # Convert other types to string
+                    cleaned_telemetry[key] = str(value)
+        
         telemetry_with_ts = {
             "ts": int(datetime.now().timestamp() * 1000),
-            "values": telemetry_data
+            "values": cleaned_telemetry
         }
         
         headers = {'Content-Type': 'application/json'}
         
         print(f"📤 Sending to ThingsBoard: {url}")
+        print(f"📤 Data: {json.dumps(cleaned_telemetry, indent=2)}")
+        
         response = requests.post(url, json=telemetry_with_ts, headers=headers, timeout=10)
+        
+        # Check for specific error responses
+        if response.status_code >= 400:
+            print(f"❌ ThingsBoard API error: Status {response.status_code}, Response: {response.text}")
+            
+            # Handle specific error cases
+            if response.status_code == 401:
+                print("❌ Unauthorized - check your access token")
+                send_telegram_alert("ThingsBoard access token is invalid", "thingsboard_error")
+            elif response.status_code == 500:
+                print("❌ Internal server error from ThingsBoard - check data format")
+                # Try to send a simplified version
+                simplified_data = {
+                    "power": power,
+                    "solar_power": solar_power,
+                    "battery_percentage": battery_percentage,
+                    "temperature": weather_cache['current'].get('temperature') if weather_cache and not weather_cache.get('error') else None
+                }
+                simplified_data = {k: v for k, v in simplified_data.items() if v is not None}
+                print(f"🔄 Trying simplified data: {simplified_data}")
+                
+                # Retry with simplified data
+                telemetry_with_ts_simple = {
+                    "ts": int(datetime.now().timestamp() * 1000),
+                    "values": simplified_data
+                }
+                retry_response = requests.post(url, json=telemetry_with_ts_simple, headers=headers, timeout=5)
+                if retry_response.status_code < 300:
+                    print("✅ Simplified data sent successfully")
+                    return True
+                
+            return False
+            
         response.raise_for_status()
         
         print(f"✅ Successfully sent to ThingsBoard (Status: {response.status_code})")
@@ -125,7 +172,7 @@ def send_to_thingsboard(device_token, telemetry_data):
         return False
     except Exception as e:
         print(f"❌ Error sending to ThingsBoard: {str(e)}")
-        send_telegram_alert("Error sending to thingsboard","server error")
+        send_telegram_alert(f"Error sending to ThingsBoard: {str(e)}", "server_error")
         return False
 
 def send_all_data_to_thingsboard():
@@ -173,15 +220,38 @@ def send_all_data_to_thingsboard():
             "location_lon": BAREILLY_LON,
         }
         
-        # Filter out None values
-        telemetry_data = {k: v for k, v in telemetry_data.items() if v is not None}
+        # Filter out None values and ensure all values are JSON serializable
+        filtered_telemetry = {}
+        for k, v in telemetry_data.items():
+            if v is not None:
+                # Convert any non-standard types
+                if isinstance(v, (int, float, str, bool)):
+                    filtered_telemetry[k] = v
+                else:
+                    try:
+                        # Try to convert to float first, then string if that fails
+                        filtered_telemetry[k] = float(v)
+                    except (ValueError, TypeError):
+                        filtered_telemetry[k] = str(v)
         
         # Send to ThingsBoard
-        success = send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
+        success = send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, filtered_telemetry)
         return success
         
     except Exception as e:
         print(f"❌ Error in send_all_data_to_thingsboard: {str(e)}")
+        # Try to send at least basic data
+        try:
+            basic_data = {
+                "power": power,
+                "solar_power": solar_power,
+                "battery_percentage": battery_percentage,
+                "ts": int(datetime.now().timestamp() * 1000)
+            }
+            basic_data = {k: v for k, v in basic_data.items() if v is not None}
+            send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, basic_data)
+        except:
+            pass
         return False
 
 def resend_weather_to_thingsboard():
