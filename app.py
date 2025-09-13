@@ -546,7 +546,7 @@ def hourly_forecast():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/combined-data', methods['GET'])
+@app.route('/combined-data', methods=['GET'])
 def combined_data():
     try:
         esp32_data = {
