@@ -64,12 +64,30 @@ BAREILLY_LON = 79.4151
 # Open-Meteo API
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
+# Your app's API endpoint
+APP_API_URL = "https://energy-vison.vercel.app/api/dashboard-data"
 
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '8352010252:AAFxUDRp1ihGFQk_cu4ifQgQ8Yi4a_UVpDA')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '5625474222')
 # ThingsBoard Configuration
 THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.io')
 THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'B1xqPBWrB9pZu4pkUU69')
+
+def send_to_app(data):
+    """Send data to your app's API endpoint"""
+    try:
+        print(f"📤 Sending data to app: {APP_API_URL}")
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(APP_API_URL, json=data, headers=headers, timeout=10)
+        response.raise_for_status()
+        print(f"✅ Successfully sent to app (Status: {response.status_code})")
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"❌ App API error: {str(e)}")
+        return False
+    except Exception as e:
+        print(f"❌ Error sending to app: {str(e)}")
+        return False
 
 @app.route('/')
 def home():
@@ -84,7 +102,8 @@ def home():
             "GET /test-params": "Check current parameter values",
             "POST /send-to-thingsboard": "Send data to ThingsBoard",
             "POST /resend-weather": "Resend weather data to ThingsBoard",
-            "POST /alert": "Send alert to Telegram"
+            "POST /alert": "Send alert to Telegram",
+            "POST /send-to-app": "Send data to your app"
         },
         "thingsboard_config": {
             "host": THINGSBOARD_HOST,
@@ -94,6 +113,10 @@ def home():
         "telegram_config": {
             "bot_configured": TELEGRAM_BOT_TOKEN is not None,
             "chat_id_configured": TELEGRAM_CHAT_ID is not None
+        },
+        "app_config": {
+            "app_url": APP_API_URL,
+            "status": "configured"
         },
         "status": "active"
     })
@@ -274,8 +297,41 @@ def receive_esp32_data():
             }
             send_to_thingsboard(THINGSBOARD_ACCESS_TOKEN, telemetry_data)
         
-        # Get current weather data to send back to ESP32
+        # Get current weather data
         weather_data = get_weather_data(force_refresh=False)
+        
+        # Prepare combined data for your app
+        combined_data = {
+            "esp32_data": {
+                "box_temp": box_temp,
+                "power": power,
+                "solar_power": solar_power,
+                "battery_percentage": battery_percentage,
+                "voltage": voltage,
+                "current": current,
+                "solar_voltage": solar_voltage,
+                "solar_current": solar_current,
+                "light_intensity": light_intensity,
+                "energy": energy,
+                "frequency": frequency,
+                "nonessentialrelaystate": nonessentialrelaystate
+            },
+            "alerts": {
+                "alert1": alert1,
+                "alert2": alert2,
+                "alert3": alert3,
+                "alert4": alert4,
+                "alert5": alert5,
+                "alert6": alert6,
+                "alert7": alert7,
+                "alert8": alert8
+            },
+            "weather_data": weather_data if 'error' not in weather_data else {"error": weather_data['error']},
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Send combined data to your app
+        send_to_app(combined_data)
         
         # FIXED: Handle case where weather data contains error
         if 'error' in weather_data:
@@ -479,6 +535,27 @@ def combined_data():
         }
         
         weather_data = get_weather_data()
+        
+        # Prepare combined data for your app
+        combined_data = {
+            "esp32_data": esp32_data,
+            "alerts": {
+                "alert1": alert1,
+                "alert2": alert2,
+                "alert3": alert3,
+                "alert4": alert4,
+                "alert5": alert5,
+                "alert6": alert6,
+                "alert7": alert7,
+                "alert8": alert8
+            },
+            "weather_data": weather_data if 'error' not in weather_data else {"error": weather_data['error']},
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Send combined data to your app
+        send_to_app(combined_data)
+        
         return jsonify({"esp32_data": esp32_data, "weather_data": weather_data})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -683,6 +760,58 @@ def predictionalerts():
         print(f"❌ Error in prediction alerts: {str(e)}")
 #.........................................................................................................................................
 
+@app.route('/send-to-app', methods=['POST'])
+def send_data_to_app():
+    """Endpoint to manually trigger sending data to your app"""
+    try:
+        # Get current ESP32 data
+        esp32_data = {
+            "box_temp": box_temp,
+            "power": power,
+            "solar_power": solar_power,
+            "battery_percentage": battery_percentage,
+            "voltage": voltage,
+            "current": current,
+            "solar_voltage": solar_voltage,
+            "solar_current": solar_current,
+            "light_intensity": light_intensity,
+            "energy": energy,
+            "frequency": frequency,
+            "nonessentialrelaystate": nonessentialrelaystate
+        }
+        
+        # Get weather data
+        weather_data = get_weather_data(force_refresh=False)
+        
+        # Prepare combined data for your app
+        combined_data = {
+            "esp32_data": esp32_data,
+            "alerts": {
+                "alert1": alert1,
+                "alert2": alert2,
+                "alert3": alert3,
+                "alert4": alert4,
+                "alert5": alert5,
+                "alert6": alert6,
+                "alert7": alert7,
+                "alert8": alert8
+            },
+            "weather_data": weather_data if 'error' not in weather_data else {"error": weather_data['error']},
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Send combined data to your app
+        success = send_to_app(combined_data)
+        
+        return jsonify({
+            "success": success,
+            "message": "Data sent to app successfully" if success else "Failed to send data to app",
+            "data_sent": combined_data
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
@@ -690,7 +819,8 @@ def health_check():
     return jsonify({
         "status": "healthy", 
         "telegram": telegram_status,
-        "thingsboard": "configured" if THINGSBOARD_ACCESS_TOKEN != 'YOUR_DEVICE_ACCESS_TOKEN' else "not_configured"
+        "thingsboard": "configured" if THINGSBOARD_ACCESS_TOKEN != 'YOUR_DEVICE_ACCESS_TOKEN' else "not_configured",
+        "app": "configured"
     }), 200
 
 if __name__ == '__main__':
