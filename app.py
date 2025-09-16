@@ -584,7 +584,7 @@ def combined_data():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/test-open-meteo', methods['GET'])
+@app.route('/test-open-meteo', methods=['GET'])
 def test_open_meteo():
     try:
         weather_data = get_weather_data()
