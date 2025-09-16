@@ -4,6 +4,7 @@ import requests
 import random
 import math
 import os
+import time
 from flask_cors import CORS  
 
 app = Flask(__name__)
@@ -39,7 +40,6 @@ last_alert_time = {}
 ALERT_COOLDOWN = 300  # 5 minutes in seconds
 nonessentialrelaystate=1
 
-
 averageenergyconsume=2.5  # in same interval in which total predict energy calculated calculated it like avg power of one day then avg power of this time-?
 predicttotalenergy=0
 alert1=None
@@ -50,7 +50,6 @@ alert5=None
 alert6=None
 alert7=None
 alert8=None
-
 
 # Weather data cache
 weather_cache = None
@@ -74,20 +73,39 @@ THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.
 THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'B1xqPBWrB9pZu4pkUU69')
 
 def send_to_app(data):
-    """Send data to your app's API endpoint"""
-    try:
-        print(f"📤 Sending data to app: {APP_API_URL}")
-        headers = {'Content-Type': 'application/json'}
-        response = requests.post(APP_API_URL, json=data, headers=headers, timeout=10)
-        response.raise_for_status()
-        print(f"✅ Successfully sent to app (Status: {response.status_code})")
-        return True
-    except requests.exceptions.RequestException as e:
-        print(f"❌ App API error: {str(e)}")
-        return False
-    except Exception as e:
-        print(f"❌ Error sending to app: {str(e)}")
-        return False
+    """Send data to your app's API endpoint with retry mechanism"""
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"📤 Sending data to app (attempt {attempt + 1}/{max_retries}): {APP_API_URL}")
+            headers = {'Content-Type': 'application/json'}
+            
+            # Use a shorter timeout for the app request
+            response = requests.post(APP_API_URL, json=data, headers=headers, timeout=5)
+            response.raise_for_status()
+            
+            print(f"✅ Successfully sent to app (Status: {response.status_code})")
+            return True
+            
+        except requests.exceptions.Timeout:
+            print(f"❌ App API timeout (attempt {attempt + 1}/{max_retries})")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+            else:
+                print("❌ All attempts to send to app failed due to timeout")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            print(f"❌ App API error: {str(e)}")
+            return False
+            
+        except Exception as e:
+            print(f"❌ Error sending to app: {str(e)}")
+            return False
+    
+    return False
 
 @app.route('/')
 def home():
@@ -330,8 +348,11 @@ def receive_esp32_data():
             "timestamp": datetime.now().isoformat()
         }
         
-        # Send combined data to your app
-        send_to_app(combined_data)
+        # Send combined data to your app (non-blocking)
+        import threading
+        thread = threading.Thread(target=send_to_app, args=(combined_data,))
+        thread.daemon = True
+        thread.start()
         
         # FIXED: Handle case where weather data contains error
         if 'error' in weather_data:
@@ -490,7 +511,7 @@ def get_weather_data(force_refresh=False):
         return weather_data
         
     except Exception as e:
-        error_msg = f"Weather API error: {str(e)}"
+        error_msg = f"Weater API error: {str(e)}"
         send_telegram_alert("Weather API error","api error")
         print(f"❌ {error_msg}")
         return {'error': error_msg}
@@ -553,14 +574,17 @@ def combined_data():
             "timestamp": datetime.now().isoformat()
         }
         
-        # Send combined data to your app
-        send_to_app(combined_data)
+        # Send combined data to your app (non-blocking)
+        import threading
+        thread = threading.Thread(target=send_to_app, args=(combined_data,))
+        thread.daemon = True
+        thread.start()
         
         return jsonify({"esp32_data": esp32_data, "weather_data": weather_data})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/test-open-meteo', methods=['GET'])
+@app.route('/test-open-meteo', methods['GET'])
 def test_open_meteo():
     try:
         weather_data = get_weather_data()
