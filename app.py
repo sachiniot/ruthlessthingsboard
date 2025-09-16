@@ -73,47 +73,89 @@ THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.
 THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'B1xqPBWrB9pZu4pkUU69')
 
 def send_to_app(data):
-    """Send data to your app's API endpoint with better error handling"""
-    max_retries = 2  # Reduced from 3 to avoid long delays
-    retry_delay = 1  # seconds (reduced from 2)
+    """Send data to your app's API endpoint with detailed debugging"""
+    max_retries = 2
+    retry_delay = 1
     
-    # Check if the app URL is reachable first
+    print(f"🔍 Attempting to connect to: {APP_API_URL}")
+    
+    # Test basic connectivity first
     try:
-        # Quick connectivity check
-        response = requests.head(APP_API_URL, timeout=2)
-        if response.status_code >= 400:
-            print(f"⚠️ App API seems down (Status: {response.status_code}) - skipping send")
+        # Test DNS resolution
+        import socket
+        hostname = APP_API_URL.split('//')[1].split('/')[0]
+        ip_address = socket.gethostbyname(hostname)
+        print(f"✅ DNS resolved: {hostname} → {ip_address}")
+        
+        # Test basic connectivity
+        test_response = requests.head(APP_API_URL, timeout=3)
+        print(f"✅ Basic connectivity: Status {test_response.status_code}")
+        
+        if test_response.status_code >= 400:
+            print(f"⚠️ App API responded with error: {test_response.status_code}")
             return False
-    except requests.exceptions.RequestException:
-        print("⚠️ App API unreachable - skipping send")
+            
+    except socket.gaierror:
+        print(f"❌ DNS resolution failed for {hostname}")
+        return False
+    except requests.exceptions.SSLError:
+        print(f"❌ SSL certificate error - trying without verification")
+        # We'll handle this in the retry loop
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Connectivity test failed: {str(e)}")
         return False
     
     for attempt in range(max_retries):
         try:
             print(f"📤 Sending data to app (attempt {attempt + 1}/{max_retries})")
-            headers = {'Content-Type': 'application/json'}
+            headers = {
+                'Content-Type': 'application/json',
+                'User-Agent': 'SolarMonitor/1.0'
+            }
             
-            # Use a shorter timeout for the app request
-            response = requests.post(APP_API_URL, json=data, headers=headers, timeout=3)  # Reduced from 5 to 3 seconds
+            # Try with and without SSL verification
+            verify_ssl = attempt == 0  # Verify on first attempt, skip on retry
+            
+            response = requests.post(
+                APP_API_URL, 
+                json=data, 
+                headers=headers, 
+                timeout=5,
+                verify=verify_ssl
+            )
+            
+            print(f"✅ App responded with status: {response.status_code}")
             response.raise_for_status()
             
-            print(f"✅ Successfully sent to app (Status: {response.status_code})")
+            print(f"✅ Successfully sent to app")
             return True
             
-        except requests.exceptions.Timeout:
-            print(f"❌ App API timeout (attempt {attempt + 1}/{max_retries})")
+        except requests.exceptions.SSLError:
+            print(f"❌ SSL error (attempt {attempt + 1})")
             if attempt < max_retries - 1:
                 time.sleep(retry_delay)
             else:
-                print("❌ All attempts to send to app failed due to timeout")
+                print("❌ All attempts failed due to SSL issues")
                 return False
                 
+        except requests.exceptions.Timeout:
+            print(f"❌ Timeout (attempt {attempt + 1})")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+            else:
+                print("❌ All attempts timed out")
+                return False
+                
+        except requests.exceptions.ConnectionError as e:
+            print(f"❌ Connection error: {str(e)}")
+            return False
+            
         except requests.exceptions.RequestException as e:
-            print(f"❌ App API error: {str(e)}")
+            print(f"❌ Request error: {str(e)}")
             return False
             
         except Exception as e:
-            print(f"❌ Error sending to app: {str(e)}")
+            print(f"❌ Unexpected error: {str(e)}")
             return False
     
     return False
@@ -410,6 +452,60 @@ def receive_esp32_data():
         
     except Exception as e:
         print(f"❌ Error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+@app.route('/test-app-connection', methods=['GET'])
+def test_app_connection():
+    """Test connection to the app API"""
+    try:
+        print(f"🔍 Testing connection to: {APP_API_URL}")
+        
+        # Test DNS resolution
+        import socket
+        from urllib.parse import urlparse
+        
+        parsed_url = urlparse(APP_API_URL)
+        hostname = parsed_url.hostname
+        
+        try:
+            ip_address = socket.gethostbyname(hostname)
+            dns_status = f"✅ DNS resolved: {hostname} → {ip_address}"
+        except socket.gaierror:
+            dns_status = f"❌ DNS failed for: {hostname}"
+            return jsonify({"error": dns_status}), 500
+        
+        # Test HTTP connection
+        try:
+            response = requests.head(APP_API_URL, timeout=5, allow_redirects=True)
+            http_status = f"✅ HTTP connection: Status {response.status_code}"
+        except requests.exceptions.SSLError:
+            http_status = "⚠️ SSL error (but connection established)"
+            # Try without SSL verification
+            try:
+                response = requests.head(APP_API_URL, timeout=5, verify=False)
+                http_status = f"⚠️ HTTP connection (no SSL): Status {response.status_code}"
+            except Exception as e:
+                http_status = f"❌ HTTP failed: {str(e)}"
+                return jsonify({"error": http_status}), 500
+        except requests.exceptions.RequestException as e:
+            http_status = f"❌ HTTP failed: {str(e)}"
+            return jsonify({"error": http_status}), 500
+        
+        # Test POST request
+        try:
+            test_data = {"test": "connection", "timestamp": datetime.now().isoformat()}
+            response = requests.post(APP_API_URL, json=test_data, timeout=5)
+            post_status = f"✅ POST test: Status {response.status_code}"
+        except Exception as e:
+            post_status = f"❌ POST failed: {str(e)}"
+        
+        return jsonify({
+            "dns": dns_status,
+            "http": http_status,
+            "post": post_status,
+            "app_url": APP_API_URL
+        })
+        
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route('/test-params', methods=['GET'])
@@ -794,11 +890,11 @@ def predictionalerts():
         print(f"❌ Error in prediction alerts: {str(e)}")
 #.........................................................................................................................................
 
-@app.route('/send-to-app', methods=['POST'])
-def send_data_to_app():
-    """Endpoint to manually trigger sending data to your app"""
+@app.route('/api/dashboard-data', methods=['GET', 'POST'])
+def dashboard_data():
+    """Serve dashboard data directly from this Flask app"""
     try:
-        # Get current ESP32 data
+        # Get the latest data
         esp32_data = {
             "box_temp": box_temp,
             "power": power,
@@ -814,10 +910,8 @@ def send_data_to_app():
             "nonessentialrelaystate": nonessentialrelaystate
         }
         
-        # Get weather data
         weather_data = get_weather_data(force_refresh=False)
         
-        # Prepare combined data for your app
         combined_data = {
             "esp32_data": esp32_data,
             "alerts": {
@@ -834,14 +928,7 @@ def send_data_to_app():
             "timestamp": datetime.now().isoformat()
         }
         
-        # Send combined data to your app
-        success = send_to_app(combined_data)
-        
-        return jsonify({
-            "success": success,
-            "message": "Data sent to app successfully" if success else "Failed to send data to app",
-            "data_sent": combined_data
-        })
+        return jsonify(combined_data)
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
