@@ -73,17 +73,28 @@ THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.
 THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'B1xqPBWrB9pZu4pkUU69')
 
 def send_to_app(data):
-    """Send data to your app's API endpoint with retry mechanism"""
-    max_retries = 3
-    retry_delay = 2  # seconds
+    """Send data to your app's API endpoint with better error handling"""
+    max_retries = 2  # Reduced from 3 to avoid long delays
+    retry_delay = 1  # seconds (reduced from 2)
+    
+    # Check if the app URL is reachable first
+    try:
+        # Quick connectivity check
+        response = requests.head(APP_API_URL, timeout=2)
+        if response.status_code >= 400:
+            print(f"⚠️ App API seems down (Status: {response.status_code}) - skipping send")
+            return False
+    except requests.exceptions.RequestException:
+        print("⚠️ App API unreachable - skipping send")
+        return False
     
     for attempt in range(max_retries):
         try:
-            print(f"📤 Sending data to app (attempt {attempt + 1}/{max_retries}): {APP_API_URL}")
+            print(f"📤 Sending data to app (attempt {attempt + 1}/{max_retries})")
             headers = {'Content-Type': 'application/json'}
             
             # Use a shorter timeout for the app request
-            response = requests.post(APP_API_URL, json=data, headers=headers, timeout=5)
+            response = requests.post(APP_API_URL, json=data, headers=headers, timeout=3)  # Reduced from 5 to 3 seconds
             response.raise_for_status()
             
             print(f"✅ Successfully sent to app (Status: {response.status_code})")
@@ -92,7 +103,7 @@ def send_to_app(data):
         except requests.exceptions.Timeout:
             print(f"❌ App API timeout (attempt {attempt + 1}/{max_retries})")
             if attempt < max_retries - 1:
-                time.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+                time.sleep(retry_delay)
             else:
                 print("❌ All attempts to send to app failed due to timeout")
                 return False
@@ -106,7 +117,6 @@ def send_to_app(data):
             return False
     
     return False
-
 @app.route('/')
 def home():
     return jsonify({
