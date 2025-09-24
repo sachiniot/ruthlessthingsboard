@@ -60,6 +60,33 @@ CACHE_DURATION = 3600  # 1 hour
 BAREILLY_LAT = 28.3640
 BAREILLY_LON = 79.4151
 
+
+
+# ===== Google Drive Setup =====
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
+import io, json
+
+GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+GDRIVE_FOLDER_ID = os.environ.get("GDRIVE_FOLDER_ID")
+
+drive_service = None
+if GOOGLE_CREDENTIALS_JSON and GDRIVE_FOLDER_ID:
+    try:
+        creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
+        creds = service_account.Credentials.from_service_account_info(
+            creds_dict,
+            scopes=["https://www.googleapis.com/auth/drive.file"]
+        )
+        drive_service = build("drive", "v3", credentials=creds)
+        print("✅ Google Drive client initialized")
+    except Exception as e:
+        print(f"❌ Failed to initialize Google Drive client: {e}")
+# ===============================
+
+
+
 # Open-Meteo API
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
@@ -71,6 +98,42 @@ TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '5625474222')
 # ThingsBoard Configuration
 THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.io')
 THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'B1xqPBWrB9pZu4pkUU69')
+
+
+
+def save_to_drive(data: dict):
+    """Save combined ESP32 + alerts + weather data to Google Drive"""
+    if not drive_service:
+        print("⚠️ Google Drive not configured, skipping save")
+        return False
+    
+    try:
+        json_data = json.dumps(data, indent=2)
+        filename = f"esp32_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+
+        media = MediaIoBaseUpload(io.BytesIO(json_data.encode("utf-8")), mimetype="application/json")
+
+        file_metadata = {
+            "name": filename,
+            "parents": [GDRIVE_FOLDER_ID]
+        }
+
+        file = drive_service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields="id"
+        ).execute()
+
+        print(f"✅ Data saved to Google Drive: File ID {file.get('id')}")
+        return True
+    except Exception as e:
+        print(f"❌ Error saving to Google Drive: {e}")
+        return False
+
+
+
+
+
 
 def send_to_app(data):
     """Send data to your app's API endpoint with detailed debugging"""
@@ -370,7 +433,7 @@ def receive_esp32_data():
         # Get current weather data
         weather_data = get_weather_data(force_refresh=False)
         
-        # Prepare combined data for your app
+        # Prepare combined data for your app AND Drive
         combined_data = {
             "esp32_data": {
                 "box_temp": box_temp,
@@ -399,6 +462,9 @@ def receive_esp32_data():
             "weather_data": weather_data if 'error' not in weather_data else {"error": weather_data['error']},
             "timestamp": datetime.now().isoformat()
         }
+        
+        # ✅ Save to Google Drive
+        save_to_drive(combined_data)
         
         # Send combined data to your app (non-blocking)
         import threading
@@ -453,6 +519,8 @@ def receive_esp32_data():
     except Exception as e:
         print(f"❌ Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+
 @app.route('/test-app-connection', methods=['GET'])
 def test_app_connection():
     """Test connection to the app API"""
