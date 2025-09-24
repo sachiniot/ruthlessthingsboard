@@ -3,12 +3,11 @@ requests==2.31.0
 gunicorn==21.2.0
 setuptools==69.0.3
 flask-cors==4.0.0
-# Add these to your existing requirements.txt
-google-auth>=2.27.0
-google-auth-oauthlib>=1.2.0
-google-auth-httplib2>=0.2.0
-google-api-python-client>=2.120.0
-schedule>=1.2.1
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
+
 
 
 
