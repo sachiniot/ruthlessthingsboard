@@ -330,7 +330,11 @@ def home():
             "POST /send-to-thingsboard": "Send data to ThingsBoard",
             "POST /resend-weather": "Resend weather data to ThingsBoard",
             "POST /alert": "Send alert to Telegram",
-            "POST /send-to-app": "Send data to your app"
+            "POST /send-to-app": "Send data to your app",
+            # ADD THESE BACKUP ENDPOINTS:
+            "POST /backup/now": "Trigger immediate backup",
+            "GET /backup/status": "Get backup system status",
+            "GET /backup/test-auth": "Test Google Drive authentication"
         },
         "thingsboard_config": {
             "host": THINGSBOARD_HOST,
@@ -347,8 +351,6 @@ def home():
         },
         "status": "active"
     })
-
-
 # Backup endpoints
 @app.route('/backup/now', methods=['POST'])
 def trigger_backup():
