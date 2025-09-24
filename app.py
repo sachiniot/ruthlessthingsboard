@@ -78,95 +78,104 @@ THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'B1xqPBWrB
 import pickle
 import io
 import json
-from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
 # Google Drive API scope
-SCOPES = ['https://www.googleapis.com/auth/drive.file']
+SCOPES = ['https://www.googleapis.com/auth/drive']
 
 class GoogleDriveBackup:
     def __init__(self):
         self.service = None
         self.backup_folder_id = None
         self.backup_folder_name = "Solar_Server_Backups"
+        self.use_shared_drive = True  # Service accounts work best with shared drives
     
     def authenticate(self):
-        """Authenticate with Google Drive API using OAuth 2.0"""
+        """Authenticate with Google Drive using Service Account"""
         try:
-            creds = None
-            
-            # Check if credentials are in environment variable
             credentials_json = os.environ.get('GOOGLE_CREDENTIALS_JSON')
-            if credentials_json:
-                # Write credentials to file
-                with open('credentials.json', 'w') as f:
-                    f.write(credentials_json)
+            if not credentials_json:
+                print("❌ GOOGLE_CREDENTIALS_JSON environment variable not found")
+                return False
             
-            # The file token.pickle stores the user's access and refresh tokens
-            if os.path.exists('token.pickle'):
-                with open('token.pickle', 'rb') as token:
-                    creds = pickle.load(token)
+            # Parse the service account credentials
+            creds_dict = json.loads(credentials_json)
             
-            # If there are no valid credentials available, let the user log in
-            if not creds or not creds.valid:
-                if creds and creds.expired and creds.refresh_token:
-                    creds.refresh(Request())
-                    print("✅ Refreshed Google Drive access token")
-                else:
-                    # Check if credentials.json exists
-                    if not os.path.exists('credentials.json'):
-                        print("❌ credentials.json file not found")
-                        return False
-                    
-                    flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-                    
-                    # For server environments, use console flow
-                    creds = flow.run_console()
-                    print("✅ OAuth 2.0 authentication completed")
+            # Verify it's a service account
+            if creds_dict.get('type') != 'service_account':
+                print("❌ Not a service account credentials file")
+                print("💡 Please create a Service Account in Google Cloud Console")
+                return False
             
-            # Save the credentials for the next run
-            with open('token.pickle', 'wb') as token:
-                pickle.dump(creds, token)
+            # Create credentials from service account info
+            creds = service_account.Credentials.from_service_account_info(
+                creds_dict,
+                scopes=SCOPES
+            )
             
             self.service = build('drive', 'v3', credentials=creds)
-            print("✅ Google Drive authentication successful")
+            print("✅ Service Account authentication successful")
             return True
             
         except Exception as e:
-            print(f"❌ Google Drive authentication failed: {e}")
+            print(f"❌ Service Account authentication failed: {e}")
             return False
     
     def find_or_create_backup_folder(self):
-        """Find or create the backup folder in Google Drive"""
+        """Find or create backup folder - works with Shared Drives"""
         try:
-            # Search for existing folder
-            query = f"name='{self.backup_folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-            results = self.service.files().list(q=query, fields="files(id, name)").execute()
-            folders = results.get('files', [])
+            # For service accounts, we need to use Shared Drives
+            # First, try to find an existing Shared Drive
+            results = self.service.drives().list(pageSize=10).execute()
+            drives = results.get('drives', [])
             
-            if folders:
-                self.backup_folder_id = folders[0]['id']
-                print(f"✅ Found existing backup folder: {self.backup_folder_name}")
+            if drives:
+                # Use the first available Shared Drive
+                shared_drive_id = drives[0]['id']
+                print(f"✅ Using Shared Drive: {drives[0]['name']}")
+                
+                # Now create or find our backup folder within the Shared Drive
+                query = f"name='{self.backup_folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '{shared_drive_id}' in parents"
+                results = self.service.files().list(
+                    q=query, 
+                    fields="files(id, name)",
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True
+                ).execute()
+                folders = results.get('files', [])
+                
+                if folders:
+                    self.backup_folder_id = folders[0]['id']
+                    print(f"✅ Found existing backup folder: {self.backup_folder_name}")
+                else:
+                    # Create folder in Shared Drive
+                    file_metadata = {
+                        'name': self.backup_folder_name,
+                        'mimeType': 'application/vnd.google-apps.folder',
+                        'parents': [shared_drive_id]
+                    }
+                    folder = self.service.files().create(
+                        body=file_metadata, 
+                        fields='id',
+                        supportsAllDrives=True
+                    ).execute()
+                    self.backup_folder_id = folder.get('id')
+                    print(f"✅ Created new backup folder in Shared Drive: {self.backup_folder_name}")
+                
+                return True
             else:
-                # Create new folder
-                file_metadata = {
-                    'name': self.backup_folder_name,
-                    'mimeType': 'application/vnd.google-apps.folder'
-                }
-                folder = self.service.files().create(body=file_metadata, fields='id').execute()
-                self.backup_folder_id = folder.get('id')
-                print(f"✅ Created new backup folder: {self.backup_folder_name}")
-            
-            return True
-            
+                print("❌ No Shared Drives available")
+                print("💡 Please create a Shared Drive in Google Drive and share it with your service account")
+                return False
+                
         except Exception as e:
             print(f"❌ Error finding/creating backup folder: {e}")
             return False
     
     def save_to_drive(self, data):
-        """Save data to Google Drive"""
+        """Save data to Google Drive using Service Account"""
         if not self.service:
             if not self.authenticate() or not self.find_or_create_backup_folder():
                 print("⚠️ Google Drive not configured, skipping save")
@@ -186,7 +195,8 @@ class GoogleDriveBackup:
             file = self.service.files().create(
                 body=file_metadata,
                 media_body=media,
-                fields="id"
+                fields="id",
+                supportsAllDrives=True  # Important for Shared Drives
             ).execute()
 
             print(f"✅ Data saved to Google Drive: File ID {file.get('id')}")
@@ -219,7 +229,6 @@ backup_thread = threading.Thread(target=initialize_drive_backup)
 backup_thread.daemon = True
 backup_thread.start()
 # ===============================
-
 def send_to_app(data):
     """Send data to your app's API endpoint with detailed debugging"""
     max_retries = 2
