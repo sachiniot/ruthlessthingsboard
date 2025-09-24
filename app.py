@@ -123,11 +123,11 @@ class GoogleDriveBackup:
             print(f"❌ Service Account authentication failed: {e}")
             return False
     
-    def find_or_create_backup_folder(self):
-        """Find or create backup folder - works with Shared Drives"""
+def find_or_create_backup_folder(self):
+    """Find or create backup folder - tries Shared Drives first, then personal drive"""
+    try:
+        # First try: Shared Drives (preferred for service accounts)
         try:
-            # For service accounts, we need to use Shared Drives
-            # First, try to find an existing Shared Drive
             results = self.service.drives().list(pageSize=10).execute()
             drives = results.get('drives', [])
             
@@ -136,7 +136,7 @@ class GoogleDriveBackup:
                 shared_drive_id = drives[0]['id']
                 print(f"✅ Using Shared Drive: {drives[0]['name']}")
                 
-                # Now create or find our backup folder within the Shared Drive
+                # Create or find folder in Shared Drive
                 query = f"name='{self.backup_folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '{shared_drive_id}' in parents"
                 results = self.service.files().list(
                     q=query, 
@@ -165,14 +165,33 @@ class GoogleDriveBackup:
                     print(f"✅ Created new backup folder in Shared Drive: {self.backup_folder_name}")
                 
                 return True
-            else:
-                print("❌ No Shared Drives available")
-                print("💡 Please create a Shared Drive in Google Drive and share it with your service account")
-                return False
-                
         except Exception as e:
-            print(f"❌ Error finding/creating backup folder: {e}")
-            return False
+            print(f"⚠️ Shared Drive approach failed: {e}")
+            print("🔄 Trying personal drive approach...")
+        
+        # Second try: Personal Drive (fallback)
+        query = f"name='{self.backup_folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        results = self.service.files().list(q=query, fields="files(id, name)").execute()
+        folders = results.get('files', [])
+        
+        if folders:
+            self.backup_folder_id = folders[0]['id']
+            print(f"✅ Found existing backup folder in personal drive: {self.backup_folder_name}")
+        else:
+            # Create folder in personal drive
+            file_metadata = {
+                'name': self.backup_folder_name,
+                'mimeType': 'application/vnd.google-apps.folder'
+            }
+            folder = self.service.files().create(body=file_metadata, fields='id').execute()
+            self.backup_folder_id = folder.get('id')
+            print(f"✅ Created new backup folder in personal drive: {self.backup_folder_name}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error finding/creating backup folder: {e}")
+        return False
     
     def save_to_drive(self, data):
         """Save data to Google Drive using Service Account"""
