@@ -60,33 +60,6 @@ CACHE_DURATION = 3600  # 1 hour
 BAREILLY_LAT = 28.3640
 BAREILLY_LON = 79.4151
 
-
-
-# ===== Google Drive Setup =====
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
-import io, json
-
-GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
-GDRIVE_FOLDER_ID = os.environ.get("GDRIVE_FOLDER_ID")
-
-drive_service = None
-if GOOGLE_CREDENTIALS_JSON and GDRIVE_FOLDER_ID:
-    try:
-        creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
-        creds = service_account.Credentials.from_service_account_info(
-            creds_dict,
-            scopes=["https://www.googleapis.com/auth/drive.file"]
-        )
-        drive_service = build("drive", "v3", credentials=creds)
-        print("✅ Google Drive client initialized")
-    except Exception as e:
-        print(f"❌ Failed to initialize Google Drive client: {e}")
-# ===============================
-
-
-
 # Open-Meteo API
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
@@ -100,40 +73,151 @@ THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.
 THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'B1xqPBWrB9pZu4pkUU69')
 
 
+# ===== CORRECTED Google Drive Setup =====
+import pickle
+import io
+import json
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 
-def save_to_drive(data: dict):
-    """Save combined ESP32 + alerts + weather data to Google Drive"""
-    if not drive_service:
-        print("⚠️ Google Drive not configured, skipping save")
-        return False
+# Google Drive API scope
+SCOPES = ['https://www.googleapis.com/auth/drive.file']
+
+class GoogleDriveBackup:
+    def __init__(self):
+        self.service = None
+        self.backup_folder_id = None
+        self.backup_folder_name = "Solar_Server_Backups"
     
-    try:
-        json_data = json.dumps(data, indent=2)
-        filename = f"esp32_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    def authenticate(self):
+        """Authenticate with Google Drive API using OAuth 2.0"""
+        try:
+            creds = None
+            
+            # Check if credentials are in environment variable
+            credentials_json = os.environ.get('GOOGLE_CREDENTIALS_JSON')
+            if credentials_json:
+                # Write credentials to file
+                with open('credentials.json', 'w') as f:
+                    f.write(credentials_json)
+            
+            # The file token.pickle stores the user's access and refresh tokens
+            if os.path.exists('token.pickle'):
+                with open('token.pickle', 'rb') as token:
+                    creds = pickle.load(token)
+            
+            # If there are no valid credentials available, let the user log in
+            if not creds or not creds.valid:
+                if creds and creds.expired and creds.refresh_token:
+                    creds.refresh(Request())
+                    print("✅ Refreshed Google Drive access token")
+                else:
+                    # Check if credentials.json exists
+                    if not os.path.exists('credentials.json'):
+                        print("❌ credentials.json file not found")
+                        return False
+                    
+                    flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+                    
+                    # For server environments, use console flow
+                    creds = flow.run_console()
+                    print("✅ OAuth 2.0 authentication completed")
+            
+            # Save the credentials for the next run
+            with open('token.pickle', 'wb') as token:
+                pickle.dump(creds, token)
+            
+            self.service = build('drive', 'v3', credentials=creds)
+            print("✅ Google Drive authentication successful")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Google Drive authentication failed: {e}")
+            return False
+    
+    def find_or_create_backup_folder(self):
+        """Find or create the backup folder in Google Drive"""
+        try:
+            # Search for existing folder
+            query = f"name='{self.backup_folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+            results = self.service.files().list(q=query, fields="files(id, name)").execute()
+            folders = results.get('files', [])
+            
+            if folders:
+                self.backup_folder_id = folders[0]['id']
+                print(f"✅ Found existing backup folder: {self.backup_folder_name}")
+            else:
+                # Create new folder
+                file_metadata = {
+                    'name': self.backup_folder_name,
+                    'mimeType': 'application/vnd.google-apps.folder'
+                }
+                folder = self.service.files().create(body=file_metadata, fields='id').execute()
+                self.backup_folder_id = folder.get('id')
+                print(f"✅ Created new backup folder: {self.backup_folder_name}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error finding/creating backup folder: {e}")
+            return False
+    
+    def save_to_drive(self, data):
+        """Save data to Google Drive"""
+        if not self.service:
+            if not self.authenticate() or not self.find_or_create_backup_folder():
+                print("⚠️ Google Drive not configured, skipping save")
+                return False
+        
+        try:
+            json_data = json.dumps(data, indent=2)
+            filename = f"esp32_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
 
-        media = MediaIoBaseUpload(io.BytesIO(json_data.encode("utf-8")), mimetype="application/json")
+            media = MediaIoBaseUpload(io.BytesIO(json_data.encode("utf-8")), mimetype="application/json")
 
-        file_metadata = {
-            "name": filename,
-            "parents": [GDRIVE_FOLDER_ID]
-        }
+            file_metadata = {
+                "name": filename,
+                "parents": [self.backup_folder_id]
+            }
 
-        file = drive_service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields="id"
-        ).execute()
+            file = self.service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields="id"
+            ).execute()
 
-        print(f"✅ Data saved to Google Drive: File ID {file.get('id')}")
-        return True
-    except Exception as e:
-        print(f"❌ Error saving to Google Drive: {e}")
-        return False
+            print(f"✅ Data saved to Google Drive: File ID {file.get('id')}")
+            return True
+        except Exception as e:
+            print(f"❌ Error saving to Google Drive: {e}")
+            return False
 
+# Global backup instance
+drive_backup = GoogleDriveBackup()
 
+def save_to_drive(data):
+    """Wrapper function to save data to Google Drive"""
+    return drive_backup.save_to_drive(data)
 
+def initialize_drive_backup():
+    """Initialize Google Drive backup system"""
+    time.sleep(10)  # Wait for app to start
+    if os.environ.get('GOOGLE_CREDENTIALS_JSON'):
+        if drive_backup.authenticate():
+            drive_backup.find_or_create_backup_folder()
+            print("✅ Google Drive backup system initialized")
+        else:
+            print("❌ Google Drive backup system failed to initialize")
+    else:
+        print("⚠️ Google Drive credentials not found - backup system disabled")
 
-
+# Start backup system when app starts
+backup_thread = threading.Thread(target=initialize_drive_backup)
+backup_thread.daemon = True
+backup_thread.start()
+# ===============================
 
 def send_to_app(data):
     """Send data to your app's API endpoint with detailed debugging"""
@@ -253,6 +337,58 @@ def home():
         },
         "status": "active"
     })
+
+
+# Backup endpoints
+@app.route('/backup/now', methods=['POST'])
+def trigger_backup():
+    """Trigger an immediate backup"""
+    try:
+        # Create test data for backup
+        test_data = {
+            "esp32_data": {
+                "box_temp": box_temp,
+                "power": power,
+                "solar_power": solar_power,
+                "battery_percentage": battery_percentage,
+                "timestamp": datetime.now().isoformat()
+            },
+            "backup_type": "manual",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        success = save_to_drive(test_data)
+        return jsonify({
+            "success": success,
+            "message": "Backup completed successfully" if success else "Backup failed"
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/backup/status', methods=['GET'])
+def backup_status():
+    """Get backup system status"""
+    return jsonify({
+        "backup_system_initialized": drive_backup.service is not None,
+        "backup_folder_id": drive_backup.backup_folder_id,
+        "backup_folder_name": drive_backup.backup_folder_name
+    })
+
+@app.route('/backup/test-auth', methods=['GET'])
+def test_backup_auth():
+    """Test Google Drive authentication"""
+    try:
+        success = drive_backup.authenticate()
+        if success:
+            drive_backup.find_or_create_backup_folder()
+        return jsonify({
+            "success": success,
+            "message": "Authentication successful" if success else "Authentication failed"
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 
 def send_to_thingsboard(device_token, telemetry_data):
     try:
@@ -463,11 +599,10 @@ def receive_esp32_data():
             "timestamp": datetime.now().isoformat()
         }
         
-        # ✅ Save to Google Drive
+        # ✅ Save to Google Drive (using OAuth 2.0)
         save_to_drive(combined_data)
         
         # Send combined data to your app (non-blocking)
-        import threading
         thread = threading.Thread(target=send_to_app, args=(combined_data,))
         thread.daemon = True
         thread.start()
@@ -519,6 +654,8 @@ def receive_esp32_data():
     except Exception as e:
         print(f"❌ Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+
 
 
 @app.route('/test-app-connection', methods=['GET'])
