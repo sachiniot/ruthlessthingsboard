@@ -79,7 +79,7 @@ THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'B1xqPBWrB
 
 # CSV Configuration
 CSV_FILE_PATH = 'solar_data.csv'
-DATA_INTERVAL = 300  # 5 minutes in seconds
+DATA_INTERVAL = 15  # 15  in seconds
 last_data_received = None
 
 # Initialize scheduler
@@ -231,7 +231,7 @@ def save_missing_data_entry():
         return False
 
 def check_missing_data():
-    """Check if we haven't received data and save NaN entry"""
+    """Check if we haven't received data and save NaN entry every 15 seconds"""
     global last_data_received
     
     if last_data_received is None:
@@ -241,28 +241,30 @@ def check_missing_data():
     
     time_since_last_data = (datetime.now() - last_data_received).total_seconds()
     
-    if time_since_last_data >= DATA_INTERVAL:
+    # Check every 15 seconds if data is missing (CHANGED FROM DATA_INTERVAL)
+    if time_since_last_data >= 15:  # CHANGED FROM DATA_INTERVAL
         print(f"⚠️ No data received for {time_since_last_data} seconds. Saving NaN entry.")
         save_missing_data_entry()
         # Update last received to prevent multiple entries
-        last_data_received = datetime.now()
+        last_data_received = datetime.now() + timedelta(seconds=15)  # Schedule next check
 
 def start_background_scheduler():
     """Start the background scheduler for data monitoring"""
     try:
-        # Schedule missing data check every minute
+        # Schedule missing data check every 15 seconds (CHANGED FROM 1 minute)
         scheduler.add_job(
             func=check_missing_data,
-            trigger=IntervalTrigger(minutes=1),
+            trigger=IntervalTrigger(seconds=15),  # CHANGED FROM minutes=1
             id='missing_data_check',
-            name='Check for missing ESP32 data',
+            name='Check for missing ESP32 data every 15 seconds',
             replace_existing=True
         )
         
         scheduler.start()
-        print("✅ Background scheduler started for data monitoring")
+        print("✅ Background scheduler started for 15-second data monitoring")  # UPDATED MESSAGE
     except Exception as e:
         print(f"❌ Error starting scheduler: {str(e)}")
+        
 
 def send_to_app(data):
     """Send data to your app's API endpoint with detailed debugging"""
