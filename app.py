@@ -5,8 +5,7 @@ import random
 import math
 import os
 import time
-import threading
-from flask_cors import CORS   
+from flask_cors import CORS  
 
 app = Flask(__name__)
 CORS(app) 
@@ -73,181 +72,6 @@ TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '5625474222')
 THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.io')
 THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'B1xqPBWrB9pZu4pkUU69')
 
-
-# ===== CORRECTED Google Drive Setup =====
-import pickle
-import io
-import json
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
-
-# Google Drive API scope
-SCOPES = ['https://www.googleapis.com/auth/drive']
-
-class GoogleDriveBackup:
-    def __init__(self):
-        self.service = None
-        self.backup_folder_id = None
-        self.backup_folder_name = "Solar_Server_Backups"
-        self.use_shared_drive = True  # Service accounts work best with shared drives
-    
-    def authenticate(self):
-        """Authenticate with Google Drive using Service Account"""
-        try:
-            credentials_json = os.environ.get('GOOGLE_CREDENTIALS_JSON')
-            if not credentials_json:
-                print("❌ GOOGLE_CREDENTIALS_JSON environment variable not found")
-                return False
-            
-            # Parse the service account credentials
-            creds_dict = json.loads(credentials_json)
-            
-            # Verify it's a service account
-            if creds_dict.get('type') != 'service_account':
-                print("❌ Not a service account credentials file")
-                print("💡 Please create a Service Account in Google Cloud Console")
-                return False
-            
-            # Create credentials from service account info
-            creds = service_account.Credentials.from_service_account_info(
-                creds_dict,
-                scopes=SCOPES
-            )
-            
-            self.service = build('drive', 'v3', credentials=creds)
-            print("✅ Service Account authentication successful")
-            return True
-            
-        except Exception as e:
-            print(f"❌ Service Account authentication failed: {e}")
-            return False
-    
-def find_or_create_backup_folder(self):
-    """Find or create backup folder - tries Shared Drives first, then personal drive"""
-    try:
-        # First try: Shared Drives (preferred for service accounts)
-        try:
-            results = self.service.drives().list(pageSize=10).execute()
-            drives = results.get('drives', [])
-            
-            if drives:
-                # Use the first available Shared Drive
-                shared_drive_id = drives[0]['id']
-                print(f"✅ Using Shared Drive: {drives[0]['name']}")
-                
-                # Create or find folder in Shared Drive
-                query = f"name='{self.backup_folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '{shared_drive_id}' in parents"
-                results = self.service.files().list(
-                    q=query, 
-                    fields="files(id, name)",
-                    supportsAllDrives=True,
-                    includeItemsFromAllDrives=True
-                ).execute()
-                folders = results.get('files', [])
-                
-                if folders:
-                    self.backup_folder_id = folders[0]['id']
-                    print(f"✅ Found existing backup folder: {self.backup_folder_name}")
-                else:
-                    # Create folder in Shared Drive
-                    file_metadata = {
-                        'name': self.backup_folder_name,
-                        'mimeType': 'application/vnd.google-apps.folder',
-                        'parents': [shared_drive_id]
-                    }
-                    folder = self.service.files().create(
-                        body=file_metadata, 
-                        fields='id',
-                        supportsAllDrives=True
-                    ).execute()
-                    self.backup_folder_id = folder.get('id')
-                    print(f"✅ Created new backup folder in Shared Drive: {self.backup_folder_name}")
-                
-                return True
-        except Exception as e:
-            print(f"⚠️ Shared Drive approach failed: {e}")
-            print("🔄 Trying personal drive approach...")
-        
-        # Second try: Personal Drive (fallback)
-        query = f"name='{self.backup_folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-        results = self.service.files().list(q=query, fields="files(id, name)").execute()
-        folders = results.get('files', [])
-        
-        if folders:
-            self.backup_folder_id = folders[0]['id']
-            print(f"✅ Found existing backup folder in personal drive: {self.backup_folder_name}")
-        else:
-            # Create folder in personal drive
-            file_metadata = {
-                'name': self.backup_folder_name,
-                'mimeType': 'application/vnd.google-apps.folder'
-            }
-            folder = self.service.files().create(body=file_metadata, fields='id').execute()
-            self.backup_folder_id = folder.get('id')
-            print(f"✅ Created new backup folder in personal drive: {self.backup_folder_name}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error finding/creating backup folder: {e}")
-        return False
-    
-    def save_to_drive(self, data):
-        """Save data to Google Drive using Service Account"""
-        if not self.service:
-            if not self.authenticate() or not self.find_or_create_backup_folder():
-                print("⚠️ Google Drive not configured, skipping save")
-                return False
-        
-        try:
-            json_data = json.dumps(data, indent=2)
-            filename = f"esp32_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-
-            media = MediaIoBaseUpload(io.BytesIO(json_data.encode("utf-8")), mimetype="application/json")
-
-            file_metadata = {
-                "name": filename,
-                "parents": [self.backup_folder_id]
-            }
-
-            file = self.service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields="id",
-                supportsAllDrives=True  # Important for Shared Drives
-            ).execute()
-
-            print(f"✅ Data saved to Google Drive: File ID {file.get('id')}")
-            return True
-        except Exception as e:
-            print(f"❌ Error saving to Google Drive: {e}")
-            return False
-
-# Global backup instance
-drive_backup = GoogleDriveBackup()
-
-def save_to_drive(data):
-    """Wrapper function to save data to Google Drive"""
-    return drive_backup.save_to_drive(data)
-
-def initialize_drive_backup():
-    """Initialize Google Drive backup system"""
-    time.sleep(10)  # Wait for app to start
-    if os.environ.get('GOOGLE_CREDENTIALS_JSON'):
-        if drive_backup.authenticate():
-            drive_backup.find_or_create_backup_folder()
-            print("✅ Google Drive backup system initialized")
-        else:
-            print("❌ Google Drive backup system failed to initialize")
-    else:
-        print("⚠️ Google Drive credentials not found - backup system disabled")
-
-# Start backup system when app starts
-backup_thread = threading.Thread(target=initialize_drive_backup)
-backup_thread.daemon = True
-backup_thread.start()
-# ===============================
 def send_to_app(data):
     """Send data to your app's API endpoint with detailed debugging"""
     max_retries = 2
@@ -349,11 +173,7 @@ def home():
             "POST /send-to-thingsboard": "Send data to ThingsBoard",
             "POST /resend-weather": "Resend weather data to ThingsBoard",
             "POST /alert": "Send alert to Telegram",
-            "POST /send-to-app": "Send data to your app",
-            # ADD THESE BACKUP ENDPOINTS:
-            "POST /backup/now": "Trigger immediate backup",
-            "GET /backup/status": "Get backup system status",
-            "GET /backup/test-auth": "Test Google Drive authentication"
+            "POST /send-to-app": "Send data to your app"
         },
         "thingsboard_config": {
             "host": THINGSBOARD_HOST,
@@ -370,56 +190,6 @@ def home():
         },
         "status": "active"
     })
-# Backup endpoints
-@app.route('/backup/now', methods=['POST'])
-def trigger_backup():
-    """Trigger an immediate backup"""
-    try:
-        # Create test data for backup
-        test_data = {
-            "esp32_data": {
-                "box_temp": box_temp,
-                "power": power,
-                "solar_power": solar_power,
-                "battery_percentage": battery_percentage,
-                "timestamp": datetime.now().isoformat()
-            },
-            "backup_type": "manual",
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        success = save_to_drive(test_data)
-        return jsonify({
-            "success": success,
-            "message": "Backup completed successfully" if success else "Backup failed"
-        })
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@app.route('/backup/status', methods=['GET'])
-def backup_status():
-    """Get backup system status"""
-    return jsonify({
-        "backup_system_initialized": drive_backup.service is not None,
-        "backup_folder_id": drive_backup.backup_folder_id,
-        "backup_folder_name": drive_backup.backup_folder_name
-    })
-
-@app.route('/backup/test-auth', methods=['GET'])
-def test_backup_auth():
-    """Test Google Drive authentication"""
-    try:
-        success = drive_backup.authenticate()
-        if success:
-            drive_backup.find_or_create_backup_folder()
-        return jsonify({
-            "success": success,
-            "message": "Authentication successful" if success else "Authentication failed"
-        })
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
 
 def send_to_thingsboard(device_token, telemetry_data):
     try:
@@ -600,7 +370,7 @@ def receive_esp32_data():
         # Get current weather data
         weather_data = get_weather_data(force_refresh=False)
         
-        # Prepare combined data for your app AND Drive
+        # Prepare combined data for your app
         combined_data = {
             "esp32_data": {
                 "box_temp": box_temp,
@@ -630,10 +400,8 @@ def receive_esp32_data():
             "timestamp": datetime.now().isoformat()
         }
         
-        # ✅ Save to Google Drive (using OAuth 2.0)
-        save_to_drive(combined_data)
-        
         # Send combined data to your app (non-blocking)
+        import threading
         thread = threading.Thread(target=send_to_app, args=(combined_data,))
         thread.daemon = True
         thread.start()
@@ -685,10 +453,6 @@ def receive_esp32_data():
     except Exception as e:
         print(f"❌ Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
-
-
-
 @app.route('/test-app-connection', methods=['GET'])
 def test_app_connection():
     """Test connection to the app API"""
