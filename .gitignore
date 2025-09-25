@@ -1,6 +1,16 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.env
+.DS_Store
+solar_data.csv
 *$py.class
 
 # C extensions
