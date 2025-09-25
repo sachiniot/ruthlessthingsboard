@@ -6,6 +6,11 @@ import math
 import os
 import time
 from flask_cors import CORS  
+import pandas as pd
+import numpy as np
+import csv
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 
 app = Flask(__name__)
 CORS(app) 
@@ -71,6 +76,193 @@ TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '5625474222')
 # ThingsBoard Configuration
 THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.io')
 THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'B1xqPBWrB9pZu4pkUU69')
+
+# CSV Configuration
+CSV_FILE_PATH = 'solar_data.csv'
+DATA_INTERVAL = 300  # 5 minutes in seconds
+last_data_received = None
+
+# Initialize scheduler
+scheduler = BackgroundScheduler()
+
+def init_csv_file():
+    """Initialize CSV file with headers if it doesn't exist"""
+    try:
+        if not os.path.exists(CSV_FILE_PATH):
+            headers = [
+                'timestamp', 'box_temp', 'frequency', 'power_factor', 'voltage', 
+                'current', 'power', 'energy', 'solar_voltage', 'solar_current',
+                'solar_power', 'battery_percentage', 'light_intensity', 
+                'battery_voltage', 'temperature', 'humidity', 'cloud_cover',
+                'wind_speed', 'precipitation', 'weather_code', 'alert1', 'alert2',
+                'alert3', 'alert4', 'alert5', 'alert6', 'alert7', 'alert8',
+                'nonessentialrelaystate', 'data_source'
+            ]
+            
+            with open(CSV_FILE_PATH, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(headers)
+            print(f"✅ CSV file initialized: {CSV_FILE_PATH}")
+        else:
+            print(f"✅ CSV file already exists: {CSV_FILE_PATH}")
+    except Exception as e:
+        print(f"❌ Error initializing CSV file: {str(e)}")
+
+def save_to_csv(esp32_data, weather_data, alerts):
+    """Save current data to CSV file"""
+    try:
+        # Prepare data row
+        timestamp = datetime.now().isoformat()
+        
+        # ESP32 data (handle missing values)
+        row_data = {
+            'timestamp': timestamp,
+            'box_temp': esp32_data.get('box_temp', np.nan),
+            'frequency': esp32_data.get('frequency', np.nan),
+            'power_factor': esp32_data.get('power_factor', np.nan),
+            'voltage': esp32_data.get('voltage', np.nan),
+            'current': esp32_data.get('current', np.nan),
+            'power': esp32_data.get('power', np.nan),
+            'energy': esp32_data.get('energy', np.nan),
+            'solar_voltage': esp32_data.get('solar_voltage', np.nan),
+            'solar_current': esp32_data.get('solar_current', np.nan),
+            'solar_power': esp32_data.get('solar_power', np.nan),
+            'battery_percentage': esp32_data.get('battery_percentage', np.nan),
+            'light_intensity': esp32_data.get('light_intensity', np.nan),
+            'battery_voltage': esp32_data.get('battery_voltage', np.nan),
+            'data_source': 'esp32_live'
+        }
+        
+        # Weather data
+        if 'error' not in weather_data:
+            current_weather = weather_data.get('current', {})
+            row_data.update({
+                'temperature': current_weather.get('temperature', np.nan),
+                'humidity': current_weather.get('humidity', np.nan),
+                'cloud_cover': current_weather.get('cloud_cover', np.nan),
+                'wind_speed': current_weather.get('wind_speed', np.nan),
+                'precipitation': current_weather.get('precipitation', np.nan),
+                'weather_code': current_weather.get('weather_code', np.nan),
+            })
+        else:
+            row_data.update({
+                'temperature': np.nan,
+                'humidity': np.nan,
+                'cloud_cover': np.nan,
+                'wind_speed': np.nan,
+                'precipitation': np.nan,
+                'weather_code': np.nan,
+            })
+        
+        # Alerts
+        row_data.update({
+            'alert1': alerts.get('alert1', ''),
+            'alert2': alerts.get('alert2', ''),
+            'alert3': alerts.get('alert3', ''),
+            'alert4': alerts.get('alert4', ''),
+            'alert5': alerts.get('alert5', ''),
+            'alert6': alerts.get('alert6', ''),
+            'alert7': alerts.get('alert7', ''),
+            'alert8': alerts.get('alert8', ''),
+            'nonessentialrelaystate': esp32_data.get('nonessentialrelaystate', 1)
+        })
+        
+        # Write to CSV
+        with open(CSV_FILE_PATH, 'a', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=row_data.keys())
+            writer.writerow(row_data)
+        
+        print(f"✅ Data saved to CSV: {timestamp}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error saving to CSV: {str(e)}")
+        return False
+
+def save_missing_data_entry():
+    """Save NaN entry when ESP32 fails to send data"""
+    try:
+        timestamp = datetime.now().isoformat()
+        
+        # Create row with NaN values
+        row_data = {
+            'timestamp': timestamp,
+            'box_temp': np.nan,
+            'frequency': np.nan,
+            'power_factor': np.nan,
+            'voltage': np.nan,
+            'current': np.nan,
+            'power': np.nan,
+            'energy': np.nan,
+            'solar_voltage': np.nan,
+            'solar_current': np.nan,
+            'solar_power': np.nan,
+            'battery_percentage': np.nan,
+            'light_intensity': np.nan,
+            'battery_voltage': np.nan,
+            'temperature': np.nan,
+            'humidity': np.nan,
+            'cloud_cover': np.nan,
+            'wind_speed': np.nan,
+            'precipitation': np.nan,
+            'weather_code': np.nan,
+            'alert1': '',
+            'alert2': '',
+            'alert3': '',
+            'alert4': '',
+            'alert5': '',
+            'alert6': '',
+            'alert7': '',
+            'alert8': '',
+            'nonessentialrelaystate': 1,
+            'data_source': 'missing_data'
+        }
+        
+        # Write to CSV
+        with open(CSV_FILE_PATH, 'a', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=row_data.keys())
+            writer.writerow(row_data)
+        
+        print(f"⚠️ Missing data entry saved: {timestamp}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error saving missing data entry: {str(e)}")
+        return False
+
+def check_missing_data():
+    """Check if we haven't received data and save NaN entry"""
+    global last_data_received
+    
+    if last_data_received is None:
+        # First run, initialize
+        last_data_received = datetime.now()
+        return
+    
+    time_since_last_data = (datetime.now() - last_data_received).total_seconds()
+    
+    if time_since_last_data >= DATA_INTERVAL:
+        print(f"⚠️ No data received for {time_since_last_data} seconds. Saving NaN entry.")
+        save_missing_data_entry()
+        # Update last received to prevent multiple entries
+        last_data_received = datetime.now()
+
+def start_background_scheduler():
+    """Start the background scheduler for data monitoring"""
+    try:
+        # Schedule missing data check every minute
+        scheduler.add_job(
+            func=check_missing_data,
+            trigger=IntervalTrigger(minutes=1),
+            id='missing_data_check',
+            name='Check for missing ESP32 data',
+            replace_existing=True
+        )
+        
+        scheduler.start()
+        print("✅ Background scheduler started for data monitoring")
+    except Exception as e:
+        print(f"❌ Error starting scheduler: {str(e)}")
 
 def send_to_app(data):
     """Send data to your app's API endpoint with detailed debugging"""
@@ -159,6 +351,7 @@ def send_to_app(data):
             return False
     
     return False
+
 @app.route('/')
 def home():
     return jsonify({
@@ -173,7 +366,9 @@ def home():
             "POST /send-to-thingsboard": "Send data to ThingsBoard",
             "POST /resend-weather": "Resend weather data to ThingsBoard",
             "POST /alert": "Send alert to Telegram",
-            "POST /send-to-app": "Send data to your app"
+            "POST /send-to-app": "Send data to your app",
+            "GET /api/csv-data": "Get CSV data for model",
+            "GET /api/csv-stats": "Get CSV statistics"
         },
         "thingsboard_config": {
             "host": THINGSBOARD_HOST,
@@ -187,6 +382,10 @@ def home():
         "app_config": {
             "app_url": APP_API_URL,
             "status": "configured"
+        },
+        "csv_config": {
+            "csv_file": CSV_FILE_PATH,
+            "status": "active"
         },
         "status": "active"
     })
@@ -299,10 +498,12 @@ def receive_esp32_data():
     global box_temp, frequency, power_factor, voltage, current, power, energy
     global solar_voltage, solar_current, solar_power, battery_percentage
     global light_intensity, battery_voltage, prev_light_intensity, current_light_intensity
-    global prev_battery_percent, current_battery_percent,nonessentialrelaystate
-    
+    global prev_battery_percent, current_battery_percent, nonessentialrelaystate, last_data_received
+
     print("📨 Received POST request to /esp32-data")
     
+    # Update last data received timestamp
+    last_data_received = datetime.now()
     
     try:
         data = request.get_json()
@@ -339,7 +540,45 @@ def receive_esp32_data():
         check_alerts()
         predictionalerts()
         
-       
+        # Prepare ESP32 data for CSV
+        esp32_data_for_csv = {
+            'box_temp': box_temp,
+            'frequency': frequency,
+            'power_factor': power_factor,
+            'voltage': voltage,
+            'current': current,
+            'power': power,
+            'energy': energy,
+            'solar_voltage': solar_voltage,
+            'solar_current': solar_current,
+            'solar_power': solar_power,
+            'battery_percentage': battery_percentage,
+            'light_intensity': light_intensity,
+            'battery_voltage': battery_voltage,
+            'nonessentialrelaystate': nonessentialrelaystate
+        }
+        
+        # Get current weather data
+        weather_data = get_weather_data(force_refresh=False)
+        
+        # Prepare alerts data
+        alerts_data = {
+            'alert1': alert1,
+            'alert2': alert2,
+            'alert3': alert3,
+            'alert4': alert4,
+            'alert5': alert5,
+            'alert6': alert6,
+            'alert7': alert7,
+            'alert8': alert8
+        }
+        
+        # Save to CSV (non-blocking)
+        import threading
+        csv_thread = threading.Thread(target=save_to_csv, args=(esp32_data_for_csv, weather_data, alerts_data))
+        csv_thread.daemon = True
+        csv_thread.start()
+        
         # Send to ThingsBoard
         if any([box_temp, power, solar_power]):
             telemetry_data = {
@@ -453,6 +692,7 @@ def receive_esp32_data():
     except Exception as e:
         print(f"❌ Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
 @app.route('/test-app-connection', methods=['GET'])
 def test_app_connection():
     """Test connection to the app API"""
@@ -941,11 +1181,76 @@ def health_check():
         "status": "healthy", 
         "telegram": telegram_status,
         "thingsboard": "configured" if THINGSBOARD_ACCESS_TOKEN != 'YOUR_DEVICE_ACCESS_TOKEN' else "not_configured",
-        "app": "configured"
+        "app": "configured",
+        "csv": "active"
     }), 200
 
+# New CSV endpoints for model access
+@app.route('/api/csv-data', methods=['GET'])
+def get_csv_data():
+    """Endpoint for model to fetch CSV data"""
+    try:
+        if not os.path.exists(CSV_FILE_PATH):
+            return jsonify({"error": "CSV file not found"}), 404
+        
+        # Read the CSV file
+        df = pd.read_csv(CSV_FILE_PATH)
+        
+        # Convert to JSON
+        data = df.to_dict('records')
+        
+        return jsonify({
+            "data": data,
+            "total_records": len(data),
+            "last_updated": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/csv-stats', methods=['GET'])
+def get_csv_stats():
+    """Get statistics about the CSV data"""
+    try:
+        if not os.path.exists(CSV_FILE_PATH):
+            return jsonify({"error": "CSV file not found"}), 404
+        
+        df = pd.read_csv(CSV_FILE_PATH)
+        
+        stats = {
+            "total_records": len(df),
+            "data_sources": df['data_source'].value_counts().to_dict(),
+            "missing_data_count": len(df[df['data_source'] == 'missing_data']),
+            "date_range": {
+                "start": df['timestamp'].min(),
+                "end": df['timestamp'].max()
+            },
+            "columns": list(df.columns)
+        }
+        
+        return jsonify(stats)
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Initialize the system when the app starts
+@app.before_first_request
+def initialize_system():
+    init_csv_file()
+    start_background_scheduler()
+    print("✅ Solar Monitoring System Initialized")
+
 if __name__ == '__main__':
+    # Initialize on startup
+    init_csv_file()
+    start_background_scheduler()
+    
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
 else:
+    # For production deployment
     application = app
+    
+    # Initialize when imported
+    init_csv_file()
+    start_background_scheduler()
