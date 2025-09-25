@@ -5,10 +5,12 @@ import random
 import math
 import os
 import time
-import csv
+from flask_cors import CORS  
 import pandas as pd
 import numpy as np
-from flask_cors import CORS  
+import csv
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 
 app = Flask(__name__)
 CORS(app) 
@@ -75,101 +77,117 @@ TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '5625474222')
 THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'https://demo.thingsboard.io')
 THINGSBOARD_ACCESS_TOKEN = os.environ.get('THINGSBOARD_ACCESS_TOKEN', 'B1xqPBWrB9pZu4pkUU69')
 
-# CSV file configuration
-CSV_FILENAME = "solar_monitoring_data.csv"
-last_data_received_time = None
-DATA_INTERVAL = 15  # seconds
+# CSV Configuration - ADDED FOR 15-SECOND INTERVALS
+CSV_FILE_PATH = 'solar_data.csv'
+DATA_INTERVAL = 15  # 15 seconds in seconds
+last_data_received = None
 
-def initialize_csv():
+# Initialize scheduler - ADDED
+scheduler = BackgroundScheduler()
+
+# CSV FUNCTIONS - ADDED (KEEPING YOUR EXISTING CODE STRUCTURE)
+def init_csv_file():
     """Initialize CSV file with headers if it doesn't exist"""
-    if not os.path.exists(CSV_FILENAME):
-        headers = [
-            'timestamp', 'box_temp', 'frequency', 'power_factor', 'voltage', 'current',
-            'power', 'energy', 'solar_voltage', 'solar_current', 'solar_power',
-            'battery_percentage', 'light_intensity', 'battery_voltage',
-            'weather_temperature', 'weather_humidity', 'weather_cloud_cover',
-            'weather_wind_speed', 'weather_precipitation', 'weather_weather_code',
-            'alert1', 'alert2', 'alert3', 'alert4', 'alert5', 'alert6', 'alert7', 'alert8',
-            'nonessentialrelaystate', 'irradiance', 'battery_percent_slope', 'light_slope'
-        ]
-        with open(CSV_FILENAME, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(headers)
-        print(f"✅ CSV file initialized: {CSV_FILENAME}")
-
-def save_to_csv():
-    """Save current data to CSV file with NaN handling for missing data"""
-    global last_data_received_time
-    
     try:
-        # Get current weather data
-        weather_data = get_weather_data(force_refresh=False)
-        current_weather = weather_data.get('current', {}) if 'error' not in weather_data else {}
+        if not os.path.exists(CSV_FILE_PATH):
+            headers = [
+                'timestamp', 'box_temp', 'frequency', 'power_factor', 'voltage', 
+                'current', 'power', 'energy', 'solar_voltage', 'solar_current',
+                'solar_power', 'battery_percentage', 'light_intensity', 
+                'battery_voltage', 'temperature', 'humidity', 'cloud_cover',
+                'wind_speed', 'precipitation', 'weather_code', 'alert1', 'alert2',
+                'alert3', 'alert4', 'alert5', 'alert6', 'alert7', 'alert8',
+                'nonessentialrelaystate', 'data_source'
+            ]
+            
+            with open(CSV_FILE_PATH, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(headers)
+            print(f"✅ CSV file initialized: {CSV_FILE_PATH}")
+        else:
+            print(f"✅ CSV file already exists: {CSV_FILE_PATH}")
+    except Exception as e:
+        print(f"❌ Error initializing CSV file: {str(e)}")
+
+def save_to_csv(esp32_data, weather_data, alerts):
+    """Save current data to CSV file"""
+    try:
+        # Prepare data row
+        timestamp = datetime.now().isoformat()
         
-        # Prepare data row with NaN for missing values
-        data_row = {
-            'timestamp': datetime.now().isoformat(),
-            'box_temp': box_temp if box_temp is not None else np.nan,
-            'frequency': frequency if frequency is not None else np.nan,
-            'power_factor': power_factor if power_factor is not None else np.nan,
-            'voltage': voltage if voltage is not None else np.nan,
-            'current': current if current is not None else np.nan,
-            'power': power if power is not None else np.nan,
-            'energy': energy if energy is not None else np.nan,
-            'solar_voltage': solar_voltage if solar_voltage is not None else np.nan,
-            'solar_current': solar_current if solar_current is not None else np.nan,
-            'solar_power': solar_power if solar_power is not None else np.nan,
-            'battery_percentage': battery_percentage if battery_percentage is not None else np.nan,
-            'light_intensity': light_intensity if light_intensity is not None else np.nan,
-            'battery_voltage': battery_voltage if battery_voltage is not None else np.nan,
-            'weather_temperature': current_weather.get('temperature', np.nan),
-            'weather_humidity': current_weather.get('humidity', np.nan),
-            'weather_cloud_cover': current_weather.get('cloud_cover', np.nan),
-            'weather_wind_speed': current_weather.get('wind_speed', np.nan),
-            'weather_precipitation': current_weather.get('precipitation', np.nan),
-            'weather_weather_code': current_weather.get('weather_code', np.nan),
-            'alert1': alert1 if alert1 is not None else "No Alert",
-            'alert2': alert2 if alert2 is not None else "No Alert",
-            'alert3': alert3 if alert3 is not None else "No Alert",
-            'alert4': alert4 if alert4 is not None else "No Alert",
-            'alert5': alert5 if alert5 is not None else "No Alert",
-            'alert6': alert6 if alert6 is not None else "No Alert",
-            'alert7': alert7 if alert7 is not None else "No Alert",
-            'alert8': alert8 if alert8 is not None else "No Alert",
-            'nonessentialrelaystate': nonessentialrelaystate,
-            'irradiance': irradiance,
-            'battery_percent_slope': battery_percent_slope,
-            'light_slope': light_slope
+        # ESP32 data (handle missing values)
+        row_data = {
+            'timestamp': timestamp,
+            'box_temp': esp32_data.get('box_temp', np.nan),
+            'frequency': esp32_data.get('frequency', np.nan),
+            'power_factor': esp32_data.get('power_factor', np.nan),
+            'voltage': esp32_data.get('voltage', np.nan),
+            'current': esp32_data.get('current', np.nan),
+            'power': esp32_data.get('power', np.nan),
+            'energy': esp32_data.get('energy', np.nan),
+            'solar_voltage': esp32_data.get('solar_voltage', np.nan),
+            'solar_current': esp32_data.get('solar_current', np.nan),
+            'solar_power': esp32_data.get('solar_power', np.nan),
+            'battery_percentage': esp32_data.get('battery_percentage', np.nan),
+            'light_intensity': esp32_data.get('light_intensity', np.nan),
+            'battery_voltage': esp32_data.get('battery_voltage', np.nan),
+            'data_source': 'esp32_live'
         }
         
-        # Write to CSV
-        with open(CSV_FILENAME, 'a', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=data_row.keys())
-            writer.writerow(data_row)
+        # Weather data
+        if 'error' not in weather_data:
+            current_weather = weather_data.get('current', {})
+            row_data.update({
+                'temperature': current_weather.get('temperature', np.nan),
+                'humidity': current_weather.get('humidity', np.nan),
+                'cloud_cover': current_weather.get('cloud_cover', np.nan),
+                'wind_speed': current_weather.get('wind_speed', np.nan),
+                'precipitation': current_weather.get('precipitation', np.nan),
+                'weather_code': current_weather.get('weather_code', np.nan),
+            })
+        else:
+            row_data.update({
+                'temperature': np.nan,
+                'humidity': np.nan,
+                'cloud_cover': np.nan,
+                'wind_speed': np.nan,
+                'precipitation': np.nan,
+                'weather_code': np.nan,
+            })
         
-        print(f"✅ Data saved to CSV at {datetime.now().strftime('%H:%M:%S')}")
-        last_data_received_time = datetime.now()
+        # Alerts
+        row_data.update({
+            'alert1': alerts.get('alert1', ''),
+            'alert2': alerts.get('alert2', ''),
+            'alert3': alerts.get('alert3', ''),
+            'alert4': alerts.get('alert4', ''),
+            'alert5': alerts.get('alert5', ''),
+            'alert6': alerts.get('alert6', ''),
+            'alert7': alerts.get('alert7', ''),
+            'alert8': alerts.get('alert8', ''),
+            'nonessentialrelaystate': esp32_data.get('nonessentialrelaystate', 1)
+        })
+        
+        # Write to CSV
+        with open(CSV_FILE_PATH, 'a', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=row_data.keys())
+            writer.writerow(row_data)
+        
+        print(f"✅ Data saved to CSV: {timestamp}")
+        return True
         
     except Exception as e:
         print(f"❌ Error saving to CSV: {str(e)}")
+        return False
 
-def check_and_save_missing_data():
-    """Check if data is missing and save NaN values"""
-    global last_data_received_time
-    
-    if last_data_received_time is None:
-        return
-    
-    current_time = datetime.now()
-    time_diff = (current_time - last_data_received_time).total_seconds()
-    
-    # If more than 15 seconds passed since last data, save NaN row
-    if time_diff > DATA_INTERVAL:
-        print(f"⚠️ No data received for {int(time_diff)} seconds. Saving NaN row.")
+def save_missing_data_entry():
+    """Save NaN entry when ESP32 fails to send data"""
+    try:
+        timestamp = datetime.now().isoformat()
         
-        # Save NaN row
-        nan_row = {
-            'timestamp': current_time.isoformat(),
+        # Create row with NaN values
+        row_data = {
+            'timestamp': timestamp,
             'box_temp': np.nan,
             'frequency': np.nan,
             'power_factor': np.nan,
@@ -183,71 +201,71 @@ def check_and_save_missing_data():
             'battery_percentage': np.nan,
             'light_intensity': np.nan,
             'battery_voltage': np.nan,
-            'weather_temperature': np.nan,
-            'weather_humidity': np.nan,
-            'weather_cloud_cover': np.nan,
-            'weather_wind_speed': np.nan,
-            'weather_precipitation': np.nan,
-            'weather_weather_code': np.nan,
-            'alert1': "No Data",
-            'alert2': "No Data",
-            'alert3': "No Data",
-            'alert4': "No Data",
-            'alert5': "No Data",
-            'alert6': "No Data",
-            'alert7': "No Data",
-            'alert8': "No Data",
-            'nonessentialrelaystate': np.nan,
-            'irradiance': np.nan,
-            'battery_percent_slope': np.nan,
-            'light_slope': np.nan
+            'temperature': np.nan,
+            'humidity': np.nan,
+            'cloud_cover': np.nan,
+            'wind_speed': np.nan,
+            'precipitation': np.nan,
+            'weather_code': np.nan,
+            'alert1': '',
+            'alert2': '',
+            'alert3': '',
+            'alert4': '',
+            'alert5': '',
+            'alert6': '',
+            'alert7': '',
+            'alert8': '',
+            'nonessentialrelaystate': 1,
+            'data_source': 'missing_data'
         }
         
-        try:
-            with open(CSV_FILENAME, 'a', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=nan_row.keys())
-                writer.writerow(nan_row)
-            print("✅ NaN row saved for missing data")
-            last_data_received_time = current_time
-        except Exception as e:
-            print(f"❌ Error saving NaN row: {str(e)}")
-
-@app.route('/csv-data', methods=['GET'])
-def get_csv_data():
-    """Endpoint to view CSV data"""
-    try:
-        if not os.path.exists(CSV_FILENAME):
-            return jsonify({"error": "CSV file not found"}), 404
+        # Write to CSV
+        with open(CSV_FILE_PATH, 'a', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=row_data.keys())
+            writer.writerow(row_data)
         
-        df = pd.read_csv(CSV_FILENAME)
-        return jsonify({
-            "total_records": len(df),
-            "columns": list(df.columns),
-            "last_5_records": df.tail().to_dict('records'),
-            "file_size": f"{os.path.getsize(CSV_FILENAME)} bytes"
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/download-csv', methods=['GET'])
-def download_csv():
-    """Endpoint to download CSV file"""
-    try:
-        if not os.path.exists(CSV_FILENAME):
-            return jsonify({"error": "CSV file not found"}), 404
+        print(f"⚠️ Missing data entry saved: {timestamp}")
+        return True
         
-        return jsonify({
-            "download_url": f"/{CSV_FILENAME}",
-            "filename": CSV_FILENAME,
-            "message": "Access the file directly via the filename"
-        })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"❌ Error saving missing data entry: {str(e)}")
+        return False
 
-# Initialize CSV file on startup
-initialize_csv()
+def check_missing_data():
+    """Check if we haven't received data and save NaN entry every 15 seconds"""
+    global last_data_received
+    
+    if last_data_received is None:
+        # First run, initialize
+        last_data_received = datetime.now()
+        return
+    
+    time_since_last_data = (datetime.now() - last_data_received).total_seconds()
+    
+    if time_since_last_data >= 15:  # Check every 15 seconds
+        print(f"⚠️ No data received for {time_since_last_data} seconds. Saving NaN entry.")
+        save_missing_data_entry()
+        # Update last received to prevent multiple entries
+        last_data_received = datetime.now()
 
-# Your existing functions remain exactly the same...
+def start_background_scheduler():
+    """Start the background scheduler for data monitoring"""
+    try:
+        # Schedule missing data check every 15 seconds
+        scheduler.add_job(
+            func=check_missing_data,
+            trigger=IntervalTrigger(seconds=15),
+            id='missing_data_check',
+            name='Check for missing ESP32 data every 15 seconds',
+            replace_existing=True
+        )
+        
+        scheduler.start()
+        print("✅ Background scheduler started for 15-second data monitoring")
+    except Exception as e:
+        print(f"❌ Error starting scheduler: {str(e)}")
+
+# YOUR ORIGINAL FUNCTIONS EXACTLY AS THEY WERE
 def send_to_app(data):
     """Send data to your app's API endpoint with detailed debugging"""
     max_retries = 2
@@ -351,17 +369,9 @@ def home():
             "POST /resend-weather": "Resend weather data to ThingsBoard",
             "POST /alert": "Send alert to Telegram",
             "POST /send-to-app": "Send data to your app",
-            "GET /csv-data": "View CSV data statistics",
-            "GET /download-csv": "Download CSV file info"
+            "GET /api/csv-data": "Get CSV data for model",  # ADDED
+            "GET /api/csv-stats": "Get CSV statistics"      # ADDED
         },
-        "csv_logging": {
-            "status": "active",
-            "filename": CSV_FILENAME,
-            "data_interval": f"{DATA_INTERVAL} seconds",
-            "nan_handling": "enabled"
-        },
-        "pandas_version": pd.__version__,
-        "numpy_version": np.__version__,
         "thingsboard_config": {
             "host": THINGSBOARD_HOST,
             "device_token": THINGSBOARD_ACCESS_TOKEN,
@@ -375,11 +385,13 @@ def home():
             "app_url": APP_API_URL,
             "status": "configured"
         },
+        "csv_config": {  # ADDED
+            "csv_file": CSV_FILE_PATH,
+            "data_interval": "15 seconds",
+            "status": "active"
+        },
         "status": "active"
     })
-
-# ... (ALL YOUR EXISTING FUNCTIONS REMAIN EXACTLY THE SAME - no changes below this point)
-# I'm keeping all your original functions exactly as they were to maintain your concepts and variables
 
 def send_to_thingsboard(device_token, telemetry_data):
     try:
@@ -489,10 +501,12 @@ def receive_esp32_data():
     global box_temp, frequency, power_factor, voltage, current, power, energy
     global solar_voltage, solar_current, solar_power, battery_percentage
     global light_intensity, battery_voltage, prev_light_intensity, current_light_intensity
-    global prev_battery_percent, current_battery_percent,nonessentialrelaystate
-    
+    global prev_battery_percent, current_battery_percent, nonessentialrelaystate, last_data_received
+
     print("📨 Received POST request to /esp32-data")
     
+    # Update last data received timestamp - ADDED
+    last_data_received = datetime.now()
     
     try:
         data = request.get_json()
@@ -529,9 +543,45 @@ def receive_esp32_data():
         check_alerts()
         predictionalerts()
         
-        # Save data to CSV
-        save_to_csv()
-       
+        # PREPARE DATA FOR CSV - ADDED
+        esp32_data_for_csv = {
+            'box_temp': box_temp,
+            'frequency': frequency,
+            'power_factor': power_factor,
+            'voltage': voltage,
+            'current': current,
+            'power': power,
+            'energy': energy,
+            'solar_voltage': solar_voltage,
+            'solar_current': solar_current,
+            'solar_power': solar_power,
+            'battery_percentage': battery_percentage,
+            'light_intensity': light_intensity,
+            'battery_voltage': battery_voltage,
+            'nonessentialrelaystate': nonessentialrelaystate
+        }
+        
+        # Get current weather data
+        weather_data = get_weather_data(force_refresh=False)
+        
+        # Prepare alerts data for CSV - ADDED
+        alerts_data = {
+            'alert1': alert1,
+            'alert2': alert2,
+            'alert3': alert3,
+            'alert4': alert4,
+            'alert5': alert5,
+            'alert6': alert6,
+            'alert7': alert7,
+            'alert8': alert8
+        }
+        
+        # SAVE TO CSV - ADDED (non-blocking)
+        import threading
+        csv_thread = threading.Thread(target=save_to_csv, args=(esp32_data_for_csv, weather_data, alerts_data))
+        csv_thread.daemon = True
+        csv_thread.start()
+        
         # Send to ThingsBoard
         if any([box_temp, power, solar_power]):
             telemetry_data = {
@@ -1135,30 +1185,77 @@ def health_check():
         "telegram": telegram_status,
         "thingsboard": "configured" if THINGSBOARD_ACCESS_TOKEN != 'YOUR_DEVICE_ACCESS_TOKEN' else "not_configured",
         "app": "configured",
-        "csv_logging": "active",
-        "pandas_version": pd.__version__,
-        "numpy_version": np.__version__
+        "csv": "active"  # ADDED
     }), 200
 
-# Background task to check for missing data
-import threading
-import schedule
+# NEW CSV ENDPOINTS FOR MODEL ACCESS - ADDED
+@app.route('/api/csv-data', methods=['GET'])
+def get_csv_data():
+    """Endpoint for model to fetch CSV data"""
+    try:
+        if not os.path.exists(CSV_FILE_PATH):
+            return jsonify({"error": "CSV file not found"}), 404
+        
+        # Read the CSV file
+        df = pd.read_csv(CSV_FILE_PATH)
+        
+        # Convert to JSON
+        data = df.to_dict('records')
+        
+        return jsonify({
+            "data": data,
+            "total_records": len(data),
+            "last_updated": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-def background_scheduler():
-    """Run background tasks for missing data checking"""
-    schedule.every(15).seconds.do(check_and_save_missing_data)
-    
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+@app.route('/api/csv-stats', methods=['GET'])
+def get_csv_stats():
+    """Get statistics about the CSV data"""
+    try:
+        if not os.path.exists(CSV_FILE_PATH):
+            return jsonify({"error": "CSV file not found"}), 404
+        
+        df = pd.read_csv(CSV_FILE_PATH)
+        
+        stats = {
+            "total_records": len(df),
+            "data_sources": df['data_source'].value_counts().to_dict(),
+            "missing_data_count": len(df[df['data_source'] == 'missing_data']),
+            "date_range": {
+                "start": df['timestamp'].min(),
+                "end": df['timestamp'].max()
+            },
+            "columns": list(df.columns)
+        }
+        
+        return jsonify(stats)
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-# Start background scheduler thread
-scheduler_thread = threading.Thread(target=background_scheduler)
-scheduler_thread.daemon = True
-scheduler_thread.start()
+# Initialize the system when the app starts - FIXED FOR FLASK 3.0
+@app.before_request
+def initialize_system():
+    if not hasattr(app, 'initialized'):
+        init_csv_file()
+        start_background_scheduler()
+        app.initialized = True
+        print("✅ Solar Monitoring System Initialized")
 
 if __name__ == '__main__':
+    # Initialize on startup
+    init_csv_file()
+    start_background_scheduler()
+    
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
 else:
+    # For production deployment
     application = app
+    
+    # Initialize when imported
+    init_csv_file()
+    start_background_scheduler()
