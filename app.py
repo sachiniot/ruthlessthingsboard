@@ -299,16 +299,35 @@ def send_to_app(data):
         print(f"❌ Connectivity test failed: {str(e)}")
         return False
     
+def send_to_app(data):
+    """Send data to your app's API endpoint - prints only what's being sent"""
+    max_retries = 2
+    retry_delay = 1
+    
+    # PRINT ONLY WHAT'S BEING SENT TO THE APP
+    print("\n" + "📤" * 50)
+    print("🚀 DATA BEING SENT TO APP:")
+    print("📤" * 50)
+    
+    # Print the exact JSON that's being sent
+    import json
+    print(json.dumps(data, indent=2))
+    
+    print("📤" * 50)
+    print(f"🔗 Sending to: {APP_API_URL}")
+    print("📤" * 50 + "\n")
+    
+    # Rest of your existing connection code...
     for attempt in range(max_retries):
         try:
-            print(f"📤 Sending data to app (attempt {attempt + 1}/{max_retries})")
+            print(f"📤 Attempt {attempt + 1}/{max_retries} to send data to app")
             headers = {
                 'Content-Type': 'application/json',
                 'User-Agent': 'SolarMonitor/1.0'
             }
             
             # Try with and without SSL verification
-            verify_ssl = attempt == 0  # Verify on first attempt, skip on retry
+            verify_ssl = attempt == 0
             
             response = requests.post(
                 APP_API_URL, 
@@ -318,7 +337,7 @@ def send_to_app(data):
                 verify=verify_ssl
             )
             
-            print(f"✅ App responded with status: {response.status_code}")
+            print(f"✅ App response status: {response.status_code}")
             response.raise_for_status()
             
             print(f"✅ Successfully sent to app")
