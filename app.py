@@ -263,41 +263,10 @@ def start_background_scheduler():
         scheduler.start()
         print("✅ Background scheduler started for 15-second data monitoring")
     except Exception as e:
+         print(f"❌ Error starting background scheduler: {str(e)}")
         
 
-# YOUR ORIGINAL FUNCTIONS EXACTLY AS THEY WERE
-def send_to_app(data):
-    """Send data to your app's API endpoint with detailed debugging"""
-    max_retries = 2
-    retry_delay = 1
-    
-    print(f"🔍 Attempting to connect to: {APP_API_URL}")
-    
-    # Test basic connectivity first
-    try:
-        # Test DNS resolution
-        import socket
-        hostname = APP_API_URL.split('//')[1].split('/')[0]
-        ip_address = socket.gethostbyname(hostname)
-        print(f"✅ DNS resolved: {hostname} → {ip_address}")
-        
-        # Test basic connectivity
-        test_response = requests.head(APP_API_URL, timeout=3)
-        print(f"✅ Basic connectivity: Status {test_response.status_code}")
-        
-        if test_response.status_code >= 400:
-            print(f"⚠️ App API responded with error: {test_response.status_code}")
-            return False
-            
-    except socket.gaierror:
-        print(f"❌ DNS resolution failed for {hostname}")
-        return False
-    except requests.exceptions.SSLError:
-        print(f"❌ SSL certificate error - trying without verification")
-        # We'll handle this in the retry loop
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Connectivity test failed: {str(e)}")
-        return False
+
     
 def send_to_app(data):
     """Send data to your app's API endpoint - prints only what's being sent"""
