@@ -263,7 +263,7 @@ def start_background_scheduler():
         scheduler.start()
         print("✅ Background scheduler started for 15-second data monitoring")
     except Exception as e:
-        print(f"❌ Error starting scheduler: {str(e)}")
+        
 
 # YOUR ORIGINAL FUNCTIONS EXACTLY AS THEY WERE
 def send_to_app(data):
@@ -344,19 +344,19 @@ def send_to_app(data):
             return True
             
         except requests.exceptions.SSLError:
-            print(f"❌ SSL error (attempt {attempt + 1})")
+           
             if attempt < max_retries - 1:
                 time.sleep(retry_delay)
             else:
-                print("❌ All attempts failed due to SSL issues")
+                
                 return False
                 
         except requests.exceptions.Timeout:
-            print(f"❌ Timeout (attempt {attempt + 1})")
+           
             if attempt < max_retries - 1:
                 time.sleep(retry_delay)
             else:
-                print("❌ All attempts timed out")
+                
                 return False
                 
         except requests.exceptions.ConnectionError as e:
@@ -978,7 +978,7 @@ def send_telegram_alert(message, alert_type="general"):
     last_sent = last_alert_time.get(alert_type, 0)
     
     if current_time - last_sent < ALERT_COOLDOWN:
-        print(f"⚠️ Alert {alert_type} skipped due to cooldown")
+        
         return {"status": "skipped", "reason": "cooldown"}
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
