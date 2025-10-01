@@ -81,6 +81,7 @@ last_data_received = None
 
 # Initialize scheduler - ADDED
 scheduler = BackgroundScheduler()
+scheduler_started = False  # ADDED: Flag to track scheduler status
 
 # CSV FUNCTIONS - ADDED (KEEPING YOUR EXISTING CODE STRUCTURE)
 def init_csv_file():
@@ -247,7 +248,14 @@ def check_missing_data():
 
 def start_background_scheduler():
     """Start the background scheduler for data monitoring"""
+    global scheduler_started  # ADDED: Use global flag
+    
     try:
+        # ADDED: Check if scheduler is already running
+        if scheduler_started:
+            print("✅ Background scheduler already running")
+            return
+            
         # Schedule missing data check every 15 seconds
         scheduler.add_job(
             func=check_missing_data,
@@ -258,10 +266,10 @@ def start_background_scheduler():
         )
         
         scheduler.start()
+        scheduler_started = True  # ADDED: Set flag to True
         print("✅ Background scheduler started for 15-second data monitoring")
     except Exception as e:
-         print(f"❌ Error starting background scheduler: {str(e)}")
-        
+        print(f"❌ Error starting background scheduler: {str(e)}")
 
 def send_to_app(data):
     """Send data to your app's API endpoint - prints only what's being sent"""
